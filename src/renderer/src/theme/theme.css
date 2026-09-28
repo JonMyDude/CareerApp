@@ -1,0 +1,132 @@
+/*
+ * Every colour in the app is defined here and nowhere else.
+ * Chakra's tokens (see system.ts) just point at these variables, so changing a
+ * colour — or the whole dark palette — means editing this file only.
+ *
+ * useColorMode always stamps an explicit data-theme on <html>, so there is
+ * exactly one light block and one dark block to keep in sync.
+ *
+ * The window's caption buttons (minimise / maximise / close) are coloured
+ * from --app-surface, --app-text-muted and --app-bg too: useColorMode reads
+ * them here and hands them to the main process.
+ */
+
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  /* Surfaces */
+  --app-bg: #f5f6f8;
+  --app-surface: #ffffff;
+  --app-surface-subtle: #fafbfc;
+  --app-surface-hover: #f0f2f5;
+  --app-border: #dee2e7;
+  --app-border-strong: #c4cad2;
+
+  /* Text */
+  --app-text: #16191d;
+  --app-text-muted: #656e7a;
+  --app-text-faint: #939ba6;
+
+  /* Accent */
+  --app-accent: #2f6feb;
+  --app-accent-hover: #2559c4;
+  --app-accent-subtle: #e8f0fe;
+  --app-accent-fg: #ffffff;
+
+  /* Feedback */
+  --app-danger: #d13b3b;
+  --app-danger-hover: #b02f2f;
+  --app-danger-subtle: #fdeceb;
+  --app-success: #2e8b57;
+
+
+  /* Side rail */
+  --app-rail-bg: #eaecf0;
+  --app-rail-hover-bg: #dfe2e8;
+  --app-rail-icon: #7b8593;
+  --app-rail-active-bg: #ffffff;
+  --app-rail-active-fg: var(--app-text);
+
+  /* Effects */
+  --app-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
+  --app-focus-ring: rgba(47, 111, 235, 0.4);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --app-bg: #131519;
+  --app-surface: #1b1e24;
+  --app-surface-subtle: #20242b;
+  --app-surface-hover: #262b33;
+  --app-border: #2e333c;
+  --app-border-strong: #414853;
+
+  /* Text */
+  --app-text: #e8eaed;
+  --app-text-muted: #9aa3b0;
+  --app-text-faint: #6b7482;
+
+  /* Accent */
+  --app-accent: #4d8bff;
+  --app-accent-hover: #6b9dff;
+  --app-accent-subtle: #1c2740;
+  --app-accent-fg: #0e1116;
+
+  /* Feedback */
+  --app-danger: #f2645a;
+  --app-danger-hover: #ff7c72;
+  --app-danger-subtle: #2f1c1b;
+  --app-success: #4cb782;
+
+
+  /* Side rail */
+  --app-rail-bg: #0e1014;
+  --app-rail-hover-bg: #1d212a;
+  --app-rail-icon: #69727f;
+  --app-rail-active-bg: #272c35;
+  --app-rail-active-fg: #ffffff;
+
+  /* Effects */
+  --app-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --app-focus-ring: rgba(77, 139, 255, 0.45);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--app-bg);
+  color: var(--app-text);
+  /* Keeps the window from flashing the old palette when the theme flips. */
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+/*
+ * A native <select> popup is drawn by Chromium, not by our CSS, and it does not
+ * inherit the field's background. Without this the options render as our light
+ * text on the popup's white ground — unreadable in dark mode. Setting the
+ * option colours explicitly (and color-scheme, which drives the scrollbar and
+ * highlight) makes the list match the theme.
+ */
+select {
+  color-scheme: inherit;
+}
+
+select option,
+select optgroup {
+  background-color: var(--app-surface);
+  color: var(--app-text);
+}
+
+/* The window chrome is not ours to style, but text selection is. */
+::selection {
+  background: var(--app-accent-subtle);
+  color: var(--app-text);
+}

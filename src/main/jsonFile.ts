@@ -1,0 +1,39 @@
+import { promises as fs } from 'node:fs'
+import { dirname } from 'node:path'
+
+/**
+ * The file pattern every store in main follows, in one place for new files.
+ * (daily.ts, questions.ts, usage.ts and store.ts predate this and keep their
+ * own copies — they are tested and there is nothing to gain by moving them.)
+ */
+
+/** Parsed JSON, or null when the file is missing or unreadable — both normal on first run. */
+export async function readJson(path: string): Promise<unknown> {
+  try {
+    return JSON.parse(await fs.readFile(path, 'utf-8'))
+  } catch {
+    return null
+  }
+}
+
+/** Temp file + rename, so a crash mid-write never leaves half a file behind. */
+export async function writeJsonAtomic(path: string, data: unknown): Promise<void> {
+  const tmp = `${path}.tmp`
+  await fs.mkdir(dirname(path), { recursive: true })
+  await fs.writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8')
+  await fs.rename(tmp, path)
+}
+
+/**
+ * Runs tasks one at a time, in the order they were queued, so two
+ * read-modify-writes on one file can't interleave and lose one. A task that
+ * fails rejects its own promise without stalling the tasks behind it.
+ */
+export function createQueue(): <T>(task: () => Promise<T>) => Promise<T> {
+  let tail: Promise<unknown> = Promise.resolve()
+  return <T>(task: () => Promise<T>): Promise<T> => {
+    const next = tail.then(task)
+    tail = next.catch(() => {})
+    return next
+  }
+}

@@ -1,0 +1,31 @@
+/** Channel names, in one place so main and preload cannot drift apart. */
+export const IPC = {
+  interestsList: 'interests:list',
+  interestsCreate: 'interests:create',
+  interestsUpdate: 'interests:update',
+  interestsRemove: 'interests:remove',
+  systemDataPath: 'system:data-path',
+  dailyGet: 'daily:get',
+  dailyGenerate: 'daily:generate',
+  dailyReroll: 'daily:reroll',
+  dailySetDone: 'daily:set-done',
+  dailyRemove: 'daily:remove',
+  dailyExplain: 'daily:explain',
+  dailySetNote: 'daily:set-note',
+  questionsGenerate: 'questions:generate',
+  questionsMarkSeen: 'questions:mark-seen',
+  questionsRecordAnswer: 'questions:record-answer',
+  questionsStats: 'questions:stats',
+  questionsMistakes: 'questions:mistakes',
+  usageGet: 'usage:get',
+  settingsGet: 'settings:get',
+  settingsSetApiKey: 'settings:set-api-key',
+  settingsUpdate: 'settings:update',
+  frameSetTheme: 'frame:set-theme',
+  exportHistory: 'export:history',
+  exportReveal: 'export:reveal',
+  reminderTest: 'reminder:test',
+  // Main → renderer events. The preload subscribes to these fixed names only.
+  eventDailyChanged: 'event:daily-changed',
+  eventNavigate: 'event:navigate'
+} as const

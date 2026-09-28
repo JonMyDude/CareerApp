@@ -1,0 +1,113 @@
+# Career App — Project Brief
+
+Read this before writing any code. It's the current, agreed scope, drop it in the
+project root as `CLAUDE.md` so it's loaded automatically.
+
+## What this is
+
+A local Windows desktop app, built in React, for tracking learning interests and
+generating daily prompts to explore them. Four tabs plus a Settings page
+(the gear at the bottom of the rail).
+
+## The tabs
+
+1. **Interests** — flat list. Add, edit, delete an interest, and rate its
+   importance (Low / Medium / High, filterable). Importance also weights the
+   Daily picks. That's it. No click-to-expand, no generated roadmap, no AI call
+   on this tab. Its only job is to hold data the Daily tab reads from.
+
+2. **Daily Suggestion** — on launch, picks one interest for the day (non-repeating
+   random selection, "shuffle bag" style so nothing repeats until the full list
+   has cycled) and calls the AI API to generate one small thing to read, watch,
+   or try today about that interest. Result is cached per day so reopening the
+   app doesn't re-roll it. Also: reroll, tick off (with an optional one-line
+   reflection note the model sees next time), delete, progress & streaks,
+   filter & search, export to Markdown, and an optional daily reminder.
+
+3. **Explanation** — a step-by-step walkthrough plus key concepts for one daily
+   suggestion, generated only when the user presses Explain on it, and cached.
+
+4. **Question Generator** — an AI-generated Slovenian-curriculum quiz, per
+   GEMINI_PROMPT_SPEC.md (see the build order note below). Also: review past
+   mistakes (no AI call) and accuracy stats per subject.
+
+## Explicitly out of scope (don't build this)
+
+We scrapped the original idea of clicking an interest to auto-generate a
+breakdown/subtree of steps to complete it. The Interests tab is dumb storage,
+nothing more. If you find yourself building a tree UI or a "generate subtasks"
+prompt for the Interests tab, stop, that's not part of this app anymore.
+
+## Hard constraints
+
+- Runs fully locally. The only network calls the app makes go to the AI API:
+  daily suggestions, explanations and quiz questions. Nothing else (no update
+  checks, sync or web fetching).
+- The AI API key must never touch the renderer/frontend bundle. All AI calls
+  happen in the Electron main process and are exposed to the UI through a safe
+  IPC method, e.g. `generateDailySuggestion(topic)`.
+- The provider has since been decided — see "AI provider — decided" below.
+
+## Stack — decided, don't re-open
+
+Picked 2026-09-02. These are settled, build against them. README.md has the
+file-by-file layout.
+
+- **Desktop shell**: Electron, with electron-vite for the build and
+  electron-builder for packaging.
+- **UI**: React + TypeScript. Chakra UI v3 for components.
+- **State manager**: Zustand, one small store per feature in
+  `src/renderer/src/store/`. `useInterestsStore.ts` is still the only caller of
+  `window.api.interests`.
+- **Local storage**: JSON files in `%APPDATA%/career-app/` (interests, daily,
+  questions, quiz-history, usage, config, window-theme), all owned by the main
+  process and written atomically. Deliberately not SQLite — they're flat lists,
+  don't over-engineer it.
+- **Styling**: every colour is a CSS variable in
+  `src/renderer/src/theme/theme.css`, in two blocks — `:root` for light and
+  `:root[data-theme='dark']` for dark. Chakra's tokens in `theme/system.ts` are
+  thin wrappers over those variables, so `app.surface` *is* `var(--app-surface)`.
+  To restyle, edit theme.css; don't hardcode colours in components. The window's
+  caption buttons read their colours from these variables too. Watch for Chakra
+  styles that use its own palette (e.g. a Button's `_expanded`, the stock
+  Switch): they ignore `data-theme` and stay light in dark mode.
+
+## AI provider — decided
+
+Google Gemini, picked 2026-09-02.
+
+- Endpoint: `generativelanguage.googleapis.com/v1beta`, `generateContent`.
+- Model: `gemini-3.5-flash-lite` (~1s, no thinking overhead). Override it by
+  adding `"model"` to config.json. Note `gemini-2.5-flash` is closed to new keys.
+- The key lives in `%APPDATA%/career-app/config.json` — outside the repo and
+  outside the packaged bundle. Never hardcode it in source.
+- The key is loaded by `src/main/config.ts` and used only in `src/main/ai.ts`.
+  It must never cross the IPC bridge: `settings:get` returns
+  `hasApiKey: boolean`, never the key itself. It can be set from the Settings
+  page, which is write-only.
+
+## Suggested build order
+
+Don't build all three tabs in parallel. Get one fully working end to end before
+starting the next:
+
+1. Desktop shell + IPC bridge + storage layer (CRUD on interests) + the
+   Interests tab UI. Ship this as a working .exe to yourself first.
+2. Daily Suggestion tab: shuffle-bag picker + the one AI call + caching
+   today's pick + error/offline state.
+3. Question Generator tab: BUILT, but not as originally sketched. It is an
+   AI-generated Slovenian-curriculum quiz per GEMINI_PROMPT_SPEC.md, not a
+   static JSON bank, and it is standalone — it shares nothing with the other
+   tabs, so it does not use the shuffle bag. See README.md.
+4. Since then, all BUILT: the Explanation tab; a themed title bar; the Settings
+   page; keyboard shortcuts; reflection notes, progress & streaks, history
+   filter/search and Markdown export on Daily; quiz mistake review and stats;
+   the daily reminder with tray and Start with Windows. README.md has a section
+   for each.
+
+## Full learning roadmap
+
+The detailed technology-by-technology roadmap (packaging, IPC, data modeling,
+prompt design, styling, secrets handling, etc.) lives in TickTick under
+**📈 Career App**, organized as parent tasks per category with the specifics
+as subtasks. Check there for the "why" behind each tech choice above.

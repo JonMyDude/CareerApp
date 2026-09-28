@@ -1,0 +1,31 @@
+appId: com.jon.careerapp
+productName: Career App
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**
+  - package.json
+asar: true
+# The tray and notification icon, read at runtime from process.resourcesPath
+# (see src/main/background.ts). Outside the asar, so Windows can load it.
+extraResources:
+  - from: build/icon.ico
+    to: icon.ico
+win:
+  # Multi-size .ico (16-256) generated from src/renderer/src/logo.png.
+  # Regenerate it if the logo changes — see README.
+  icon: build/icon.ico
+  target:
+    - nsis
+    - portable
+nsis:
+  # Distinct names per target — both are .exe, so a shared artifactName would
+  # make the second target overwrite the first.
+  artifactName: ${productName}-Setup-${version}-${arch}.${ext}
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: true
+portable:
+  artifactName: ${productName}-Portable-${version}-${arch}.${ext}
