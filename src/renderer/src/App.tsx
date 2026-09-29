@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Box, Flex, Heading, Tabs, Text } from '@chakra-ui/react'
+import { Box, Flex, Tabs } from '@chakra-ui/react'
 import { motion } from 'motion/react'
 import SideRail from './components/SideRail'
 import { PANELS, TABS } from './tabs/config'
@@ -57,43 +57,29 @@ export default function App(): React.JSX.Element {
       <SideRail selected={selected} />
 
       <Flex direction="column" flex="1" minW="0">
-        {/* Also the window's title bar: the native one is hidden, so this is
-            what you drag the window by, and the three caption buttons sit in
-            its top-right corner — the right padding keeps text out from under
-            them. Anything clickable added here needs `WebkitAppRegion: 'no-drag'`. */}
-        <Box
-          as="header"
-          pl="6"
-          pr="160px"
-          py="4"
-          borderBottomWidth="1px"
-          borderColor="app.border"
-          bg="app.surface"
-          css={{ WebkitAppRegion: 'drag', userSelect: 'none' }}
-        >
-          <Heading size="md" color="app.text">
-            Career App
-          </Heading>
-          <Text fontSize="sm" color="app.textMuted">
-            Track what you want to learn, one nudge at a time.
-          </Text>
-        </Box>
+        {/* The window's title bar: the native one is hidden, so this strip is
+            what you drag the window by, and Electron draws the three caption
+            buttons over its right end (height: TITLE_BAR_HEIGHT in main).
+            Anything clickable added here needs `WebkitAppRegion: 'no-drag'`. */}
+        <Box h="34px" flexShrink="0" css={{ WebkitAppRegion: 'drag' }} />
 
-        <Box flex="1" minH="0" overflowY="auto">
-          {PANELS.map(({ id, Component }) => (
-            <Tabs.Content key={id} value={id} p="6">
-              {/* Panels stay mounted — the Daily tab loads on mount, so
-                  unmounting would re-trigger generation. Inactive panels are
-                  display:none, so only the entrance of the new one is seen. */}
-              <motion.div
-                initial={false}
-                animate={selected === id ? { opacity: 1, y: 0 } : { opacity: 0, y: 6 }}
-                transition={springSnappy}
-              >
-                <Component />
-              </motion.div>
-            </Tabs.Content>
-          ))}
+        <Box as="main" flex="1" minH="0" overflowY="auto" overflowX="hidden">
+          <Box maxW="1040px" mx="auto" px="8" pt="1" pb="12">
+            {PANELS.map(({ id, Component }) => (
+              <Tabs.Content key={id} value={id} p="0">
+                {/* Panels stay mounted — the Daily tab loads on mount, so
+                    unmounting would re-trigger generation. Inactive panels are
+                    display:none, so only the entrance of the new one is seen. */}
+                <motion.div
+                  initial={false}
+                  animate={selected === id ? { opacity: 1, y: 0 } : { opacity: 0, y: 6 }}
+                  transition={springSnappy}
+                >
+                  <Component />
+                </motion.div>
+              </Tabs.Content>
+            ))}
+          </Box>
         </Box>
       </Flex>
     </Tabs.Root>

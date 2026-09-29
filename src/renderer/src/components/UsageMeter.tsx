@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { Box, Button, Flex, Text } from '@chakra-ui/react'
+import { Box, Button, chakra, Flex, Text } from '@chakra-ui/react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useNavStore } from '../store/useNavStore'
 import { useUsageStore } from '../store/useUsageStore'
 import { popIn } from '../theme/motion'
+import { card, wideRailOnly } from '../theme/styles'
 
 /**
- * Gemini tokens spent today, in the side rail.
+ * Gemini tokens spent today, in the side rail above Settings. Click for the
+ * breakdown.
  *
  * Google exposes no per-key quota endpoint, so there is no "% of your limit" to
  * show unless the user sets a daily budget in Settings. Without one there is no
@@ -65,10 +67,12 @@ export default function UsageMeter(): React.JSX.Element | null {
   const fraction = hasBudget ? Math.min(1, totalTokens / budget) : null
   const overBudget = hasBudget && totalTokens >= budget
 
+  const calls = `${usage.requests} ${usage.requests === 1 ? 'call' : 'calls'}`
+
   return (
-    <Box position="relative" ref={wrapper}>
-      <Flex
-        as="button"
+    <Box position="relative" ref={wrapper} mb="1" css={{ WebkitAppRegion: 'no-drag' }}>
+      <chakra.button
+        type="button"
         aria-label={`Gemini tokens used today: ${totalTokens.toLocaleString()}`}
         aria-expanded={open}
         title="Gemini tokens used today"
@@ -76,22 +80,41 @@ export default function UsageMeter(): React.JSX.Element | null {
           if (!open) void refresh()
           setOpen((value) => !value)
         }}
-        direction="column"
-        align="center"
-        gap="1"
-        w="42px"
-        py="1.5"
+        display="flex"
+        flexDirection="column"
+        alignItems={{ base: 'center', lg: 'flex-start' }}
+        gap="0.5"
+        w="full"
+        px={{ base: '0', lg: '11px' }}
+        py="2.5"
         borderRadius="8px"
+        bg="app.railHoverBg"
+        color="app.textMuted"
+        textAlign="left"
         cursor="pointer"
-        _hover={{ bg: 'app.railHoverBg' }}
+        _hover={{ color: 'app.text' }}
       >
-        <Text fontSize="10px" lineHeight="1" color="app.railIcon" fontWeight="medium">
+        <Text as="span" fontSize="11px" color="app.textFaint" whiteSpace="nowrap" display={wideRailOnly}>
+          Gemini today
+        </Text>
+        <Text
+          as="span"
+          maxW="full"
+          fontSize={{ base: '11px', lg: '13px' }}
+          fontWeight="600"
+          fontVariantNumeric="tabular-nums"
+          truncate
+        >
           {compact(totalTokens)}
+          <Box as="span" display={{ base: 'none', lg: 'inline' }}>
+            {' '}
+            tokens · {calls}
+          </Box>
         </Text>
         {/* No budget, no bar: an always-empty track reads as broken, and a
             filled one would imply a ceiling that does not exist. */}
         {fraction !== null && (
-          <Box w="26px" h="3px" borderRadius="full" bg="app.railHoverBg" overflow="hidden">
+          <Box w="full" h="3px" mt="1" borderRadius="full" bg="app.border" overflow="hidden">
             <Box
               h="full"
               borderRadius="full"
@@ -100,7 +123,7 @@ export default function UsageMeter(): React.JSX.Element | null {
             />
           </Box>
         )}
-      </Flex>
+      </chakra.button>
 
       <AnimatePresence>
         {open && (
@@ -110,32 +133,24 @@ export default function UsageMeter(): React.JSX.Element | null {
             initial="hidden"
             animate="shown"
             exit="exit"
-            // Grows out of the rail button it belongs to.
+            // Grows out of the rail button it belongs to, clear of the rail.
             style={{
               position: 'absolute',
               bottom: 0,
-              left: 'calc(100% + 8px)',
+              left: 'calc(100% + 20px)',
               zIndex: 10,
               transformOrigin: 'bottom left'
             }}
           >
-            <Box
-              w="230px"
-              p="3"
-              bg="app.surface"
-              borderWidth="1px"
-              borderColor="app.border"
-              borderRadius="md"
-              boxShadow="app"
-            >
+            <Box {...card} w="240px" p="4" borderRadius="12px" boxShadow="app">
               <Text fontSize="xs" fontWeight="medium" color="app.text" mb="0.5">
                 Gemini today
               </Text>
               <Text fontSize="lg" fontWeight="medium" color="app.text" lineHeight="1.2">
                 {totalTokens.toLocaleString()}
               </Text>
-              <Text fontSize="10px" color="app.textFaint" mb="3">
-                tokens · {usage.requests} {usage.requests === 1 ? 'call' : 'calls'}
+              <Text fontSize="11px" color="app.textFaint" mb="3">
+                tokens · {calls}
               </Text>
 
               <Box borderTopWidth="1px" borderColor="app.border" pt="2">

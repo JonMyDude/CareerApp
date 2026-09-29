@@ -3,6 +3,7 @@ import { Box, Button, Flex, Input, Text } from '@chakra-ui/react'
 import { LuKey } from 'react-icons/lu'
 import { ipcErrorMessage } from '../store/ipcError'
 import { useDailyStore } from '../store/useDailyStore'
+import { card, field, primaryButton } from '../theme/styles'
 
 interface Props {
   /** Prominent when there's no key at all; quiet when replacing an existing one. */
@@ -36,19 +37,15 @@ export default function ApiKeyPanel({ variant }: Props): React.JSX.Element {
 
   return (
     <Box
-      borderWidth="1px"
-      borderColor="app.border"
-      borderRadius="md"
-      bg={variant === 'setup' ? 'app.surface' : 'transparent'}
-      p="4"
+      {...card}
+      bg={variant === 'setup' ? 'app.surface' : 'app.surfaceSubtle'}
+      p={variant === 'setup' ? '6' : '4'}
     >
       <Flex align="center" gap="2" mb="1" color="app.text">
         <LuKey />
-        <Text fontWeight="medium">
-          {variant === 'setup' ? 'Add your Gemini API key' : 'Replace API key'}
-        </Text>
+        <Text fontWeight="600">{variant === 'setup' ? 'Add your Gemini API key' : 'Replace API key'}</Text>
       </Flex>
-      <Text fontSize="sm" color="app.textMuted" mb="3">
+      <Text fontSize="13px" color="app.textMuted" mb="3">
         Stored locally in your app data folder and used only by the background process.
       </Text>
 
@@ -62,28 +59,23 @@ export default function ApiKeyPanel({ variant }: Props): React.JSX.Element {
           }}
           placeholder="Paste your API key"
           aria-label="Gemini API key"
-          size="sm"
-          bg="app.surfaceSubtle"
-          color="app.text"
-          borderColor="app.border"
-          _placeholder={{ color: 'app.textFaint' }}
+          h="38px"
+          {...field}
         />
         <Button
-          size="sm"
+          h="38px"
+          px="4"
           onClick={() => void save()}
           disabled={!key.trim() || saving}
           loading={saving}
-          bg="app.accent"
-          color="app.accentFg"
-          _hover={{ bg: 'app.accentHover' }}
-          px="4"
+          {...primaryButton}
         >
           Save
         </Button>
       </Flex>
 
       {failed && (
-        <Text fontSize="sm" color="app.danger" mt="2">
+        <Text fontSize="13px" color="app.danger" mt="2">
           {failed}
         </Text>
       )}

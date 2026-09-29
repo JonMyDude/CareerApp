@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react'
-import { Box, Button, Flex, Heading, Spinner, Stack, Text } from '@chakra-ui/react'
+import { Box, Button, chakra, Flex, Grid, Spinner, Stack, Text } from '@chakra-ui/react'
 import { AnimatePresence, motion } from 'motion/react'
-import { LuHistory, LuRefreshCw, LuRotateCcw, LuX } from 'react-icons/lu'
-import type { ReviewQuestion } from '@shared/types'
+import { LuChevronRight, LuHistory, LuRefreshCw, LuRotateCcw, LuX } from 'react-icons/lu'
+import type { QuizStats, ReviewQuestion } from '@shared/types'
 import ErrorBanner from '../components/ErrorBanner'
+import Page from '../components/Page'
 import QuizProgress from '../components/QuizProgress'
 import QuizQuestionCard from '../components/QuizQuestionCard'
 import QuizSetup from '../components/QuizSetup'
 import { isActivatableButton, isTypingTarget } from '../lib/hotkeys'
-import { countMistakes, odprtih } from '../lib/quizStats'
+import { countMistakes, napak, odprtih, percent } from '../lib/quizStats'
 import { useNavStore } from '../store/useNavStore'
 import { useQuizStore } from '../store/useQuizStore'
 import { crossfade, popIn, slideAcross } from '../theme/motion'
+import { card, kicker, primaryButton, quietButton, secondaryButton } from '../theme/styles'
 
 /** 1–4 (number row or numpad) and A–D pick an answer; null for any other key. */
 function answerForKey(event: KeyboardEvent): number | null {
@@ -21,14 +23,95 @@ function answerForKey(event: KeyboardEvent): number | null {
   return event.key.length === 1 && letter >= 0 ? letter : null
 }
 
+function Kbd({ children }: { children: React.ReactNode }): React.JSX.Element {
+  return (
+    <Box
+      as="kbd"
+      px="1.5"
+      py="1px"
+      borderRadius="5px"
+      borderWidth="1px"
+      borderColor="app.borderStrong"
+      color="app.textMuted"
+      fontFamily="inherit"
+      fontWeight="600"
+    >
+      {children}
+    </Box>
+  )
+}
+
+/** The shortcuts, under the round's panels. */
+function KeyLegend(): React.JSX.Element {
+  return (
+    <Stack gap="2" px="1" fontSize="12px" color="app.textFaint">
+      <Flex align="center" gap="2">
+        <Kbd>1–4</Kbd>
+        <Kbd>A–D</Kbd>
+        odgovor
+      </Flex>
+      <Flex align="center" gap="2">
+        <Kbd>Enter</Kbd>
+        <Kbd>→</Kbd>
+        naprej
+      </Flex>
+    </Stack>
+  )
+}
+
+/** Right and wrong so far, and the subject's accuracy over every round. */
+function RoundPanel({
+  right,
+  wrong,
+  predmet,
+  stats
+}: {
+  right: number
+  wrong: number
+  predmet: string | undefined
+  stats: QuizStats | null
+}): React.JSX.Element {
+  const subject = stats?.subjects.find((line) => line.predmet === predmet)
+  return (
+    <Box {...card} p="5" data-round>
+      <Text {...kicker} mb="3">
+        Ta krog
+      </Text>
+      <Grid templateColumns="repeat(2, minmax(0, 1fr))" gap="2">
+        {[
+          { value: right, label: 'pravilno', color: 'app.success' },
+          { value: wrong, label: 'napačno', color: 'app.danger' }
+        ].map((stat) => (
+          <Box key={stat.label}>
+            <Text fontSize="24px" fontWeight="800" lineHeight="1.1" color={stat.color} fontVariantNumeric="tabular-nums">
+              {stat.value}
+            </Text>
+            <Text fontSize="12px" color="app.textMuted">
+              {stat.label}
+            </Text>
+          </Box>
+        ))}
+      </Grid>
+      {subject && (
+        <Text mt="3.5" pt="3" borderTopWidth="1px" borderColor="app.border" fontSize="12px" color="app.textFaint">
+          {subject.predmet} skupaj:{' '}
+          <Text as="span" color="app.textMuted">
+            {percent(subject.correct, subject.answered)} natančnost
+          </Text>
+        </Text>
+      )}
+    </Box>
+  )
+}
+
 /**
  * Standalone quiz over the Slovenian school curriculum. Shares nothing with
- * the other two tabs — see GEMINI_PROMPT_SPEC.md for the prompt and the
- * validation rules, both of which live in the main process.
+ * the other tabs — see GEMINI_PROMPT_SPEC.md for the prompt and the validation
+ * rules, both of which live in the main process.
  *
  * Two levels of motion: the whole screen crossfades when the status changes,
- * and within play the question body slides across while the progress bar
- * above it stays put.
+ * and within play the question body slides across while the header and the
+ * progress above it stay put.
  */
 export default function QuestionGeneratorTab(): React.JSX.Element {
   const {
@@ -50,6 +133,8 @@ export default function QuestionGeneratorTab(): React.JSX.Element {
     endRound
   } = useQuizStore()
   const [mistakesLeft, setMistakesLeft] = useState<number | null>(null)
+  const [stats, setStats] = useState<QuizStats | null>(null)
+  const answeredCount = Object.keys(answers).length
 
   // After a review round, how many mistakes are still open for that selection.
   useEffect(() => {
@@ -58,12 +143,27 @@ export default function QuestionGeneratorTab(): React.JSX.Element {
     setMistakesLeft(null)
     window.api.questions
       .stats()
-      .then((stats) => current && setMistakesLeft(countMistakes(stats, selection.razred, selection.predmet)))
+      .then((latest) => current && setMistakesLeft(countMistakes(latest, selection.razred, selection.predmet)))
       .catch(() => {})
     return () => {
       current = false
     }
   }, [status, mode, selection])
+
+  // The side panel's accuracy and open mistakes, refreshed after every answer.
+  // A local file read, never an AI call.
+  useEffect(() => {
+    if (status !== 'playing' && status !== 'finished') return
+    let current = true
+    window.api.questions
+      .stats()
+      .then((next) => current && setStats(next))
+      .catch(() => {})
+    return () => {
+      current = false
+    }
+  }, [status, answeredCount])
+
   const activeTab = useNavStore((state) => state.tab)
 
   // Answer and move on from the keyboard. Every tab stays mounted, so this only
@@ -100,192 +200,202 @@ export default function QuestionGeneratorTab(): React.JSX.Element {
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [activeTab, status, questions, index, answers, answer, next])
 
+  const results = questions.map((question, position) =>
+    answers[position] === undefined ? undefined : answers[position] === question.pravilen
+  )
+  const right = results.filter((result) => result === true).length
+  const wrong = results.filter((result) => result === false).length
+  const roundLabel = config ? `${config.predmet} · ${config.razred}` : undefined
+
   function renderScreen(): React.JSX.Element {
     if (status === 'setup') {
       return (
-        <QuizSetup
-          onStart={(chosen) => void start(chosen)}
-          onReview={(chosen) => void startReview(chosen)}
-        />
+        <QuizSetup onStart={(chosen) => void start(chosen)} onReview={(chosen) => void startReview(chosen)} />
       )
     }
 
     if (status === 'loading') {
       return (
-        <Flex direction="column" align="center" gap="3" py="16" color="app.textMuted">
-          <Spinner color="app.accent" />
-          <Text fontSize="sm">Pripravljam vprašanja…</Text>
-        </Flex>
+        <Page eyebrow={mode === 'review' ? 'Ponavljanje napak' : roundLabel} title="Pripravljam vprašanja…">
+          <Flex {...card} align="center" gap="3" p="6" color="app.textMuted">
+            <Spinner color="app.accent" size="sm" />
+            <Text fontSize="14px">{mode === 'review' ? 'Iščem tvoje napake…' : 'AI piše vprašanja.'}</Text>
+          </Flex>
+        </Page>
       )
     }
 
     if (status === 'error') {
       return (
-        <Stack gap="4" maxW="520px" mx="auto" py="8">
-          <ErrorBanner message={error ?? 'Nekaj je šlo narobe.'} />
-          <Flex gap="2">
-            <Button
-              onClick={() => void retry()}
-              bg="app.accent"
-              color="app.accentFg"
-              _hover={{ bg: 'app.accentHover' }}
-              size="sm"
-            >
-              <LuRefreshCw /> Poskusi znova
-            </Button>
-            <Button
-              onClick={reset}
-              variant="outline"
-              size="sm"
-              color="app.text"
-              borderColor="app.border"
-              _hover={{ bg: 'app.surfaceHover' }}
-            >
-              Nazaj
-            </Button>
-          </Flex>
-        </Stack>
+        <Page eyebrow="Kviz" title="Nekaj je šlo narobe">
+          <Stack gap="3" align="flex-start">
+            <Box alignSelf="stretch">
+              <ErrorBanner message={error ?? 'Nekaj je šlo narobe.'} />
+            </Box>
+            <Flex gap="2">
+              <Button h="38px" px="4" gap="2" {...primaryButton} onClick={() => void retry()}>
+                <LuRefreshCw /> Poskusi znova
+              </Button>
+              <Button h="38px" px="4" {...secondaryButton} onClick={reset}>
+                Nazaj
+              </Button>
+            </Flex>
+          </Stack>
+        </Page>
       )
     }
 
     if (status === 'finished') {
-      const score = questions.reduce(
-        (total, question, i) => total + (answers[i] === question.pravilen ? 1 : 0),
-        0
-      )
-
-      if (mode === 'review') {
-        return (
-          <Stack gap="5" maxW="520px" mx="auto" py="10" textAlign="center" data-review-finished>
-            <motion.div variants={popIn} initial="hidden" animate="shown">
-              <Heading size="md" color="app.text">
-                {score} od {questions.length}
-              </Heading>
-              <Text fontSize="sm" color="app.textMuted" mt="2">
-                Ponavljanje napak
-                {mistakesLeft !== null &&
-                  (mistakesLeft === 0
-                    ? ' · vse popravljene'
-                    : ` · še ${mistakesLeft} ${odprtih(mistakesLeft)}`)}
+      const review = mode === 'review'
+      return (
+        <Page
+          eyebrow={
+            review
+              ? `Ponavljanje napak${
+                  mistakesLeft === null
+                    ? ''
+                    : mistakesLeft === 0
+                      ? ' · vse popravljene'
+                      : ` · še ${mistakesLeft} ${odprtih(mistakesLeft)}`
+                }`
+              : roundLabel
+          }
+          title={
+            <motion.span variants={popIn} initial="hidden" animate="shown" style={{ display: 'inline-block' }}>
+              {right}{' '}
+              <Text as="span" color="app.textFaint">
+                od {questions.length} pravilnih
               </Text>
-            </motion.div>
-            <Flex gap="2" justify="center">
-              {mistakesLeft !== 0 && selection && (
-                <Button
-                  onClick={() => void startReview(selection)}
-                  bg="app.accent"
-                  color="app.accentFg"
-                  _hover={{ bg: 'app.accentHover' }}
-                  size="sm"
-                  disabled={mistakesLeft === null}
-                >
-                  <LuHistory /> Ponovi napake
-                </Button>
+            </motion.span>
+          }
+          aside={<RoundPanel right={right} wrong={wrong} predmet={config?.predmet} stats={stats} />}
+        >
+          <Stack gap="6" data-review-finished={review || undefined}>
+            <QuizProgress results={results} current={-1} />
+            <Flex gap="2" wrap="wrap">
+              {review ? (
+                <>
+                  {mistakesLeft !== 0 && selection && (
+                    <Button
+                      h="42px"
+                      px="4"
+                      gap="2"
+                      {...primaryButton}
+                      disabled={mistakesLeft === null}
+                      onClick={() => void startReview(selection)}
+                    >
+                      <LuHistory /> Ponovi napake
+                    </Button>
+                  )}
+                  <Button h="42px" px="4" gap="2" {...secondaryButton} onClick={reset}>
+                    <LuRotateCcw /> Nazaj
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button h="42px" px="5" {...primaryButton} onClick={() => void continueRound()}>
+                    Naslednji krog
+                  </Button>
+                  <Button h="42px" px="4" gap="2" {...secondaryButton} onClick={() => void retry()}>
+                    <LuRefreshCw /> Nova vprašanja
+                  </Button>
+                  <Button h="42px" px="4" gap="2" {...quietButton} onClick={reset}>
+                    <LuRotateCcw /> Spremeni nastavitve
+                  </Button>
+                </>
               )}
-              <Button
-                onClick={reset}
-                variant="outline"
-                size="sm"
-                color="app.text"
-                borderColor="app.border"
-                _hover={{ bg: 'app.surfaceHover' }}
-              >
-                <LuRotateCcw /> Nazaj
-              </Button>
             </Flex>
           </Stack>
-        )
-      }
-
-      return (
-        <Stack gap="5" maxW="520px" mx="auto" py="10" textAlign="center">
-          <motion.div variants={popIn} initial="hidden" animate="shown">
-            <Heading size="md" color="app.text">
-              {score} od {questions.length}
-            </Heading>
-            <Text fontSize="sm" color="app.textMuted" mt="2">
-              {config?.predmet}, {config?.razred}
-            </Text>
-          </motion.div>
-          <Flex gap="2" justify="center">
-            <Button
-              onClick={() => void continueRound()}
-              bg="app.accent"
-              color="app.accentFg"
-              _hover={{ bg: 'app.accentHover' }}
-              size="sm"
-            >
-              Naslednji krog
-            </Button>
-            <Button
-              onClick={() => void retry()}
-              variant="outline"
-              size="sm"
-              color="app.text"
-              borderColor="app.border"
-              _hover={{ bg: 'app.surfaceHover' }}
-            >
-              <LuRefreshCw /> Nova vprašanja
-            </Button>
-            <Button
-              onClick={reset}
-              variant="ghost"
-              size="sm"
-              color="app.textMuted"
-              _hover={{ bg: 'app.surfaceHover' }}
-            >
-              <LuRotateCcw /> Spremeni nastavitve
-            </Button>
-          </Flex>
-        </Stack>
+        </Page>
       )
     }
 
     const question = questions[index]
     if (!question) return <Box />
 
-    const answered = questions.filter((_, position) => answers[position] !== undefined).length
+    // A review question carries its own subject and class.
+    const review = mode === 'review' ? (question as ReviewQuestion) : null
+    const openMistakes = mode === 'new' && selection ? countMistakes(stats, selection.razred, selection.predmet) : 0
 
     return (
-      <Stack gap="4" maxW="720px" mx="auto">
-        <Flex align="center" justify="space-between" gap="3">
-          {/* With a random pick the user would otherwise not know what they drew.
-              A review question carries its own subject and class. */}
-          <Text fontSize="xs" color="app.textFaint" truncate data-quiz-context>
-            {mode === 'review'
-              ? `Ponavljanje napak · ${(question as ReviewQuestion).predmet} · ${(question as ReviewQuestion).razred}`
-              : `${config?.predmet} · ${config?.razred}`}
-          </Text>
-          {/* Deliberately quiet, and away from the primary Naprej/Zaključi button. */}
+      <Page
+        // With a random pick the user would otherwise not know what they drew.
+        eyebrow={
+          <span data-quiz-context>
+            {review ? `Ponavljanje napak · ${review.predmet} · ${review.razred}` : roundLabel}
+          </span>
+        }
+        title={
+          <Box as="span" fontVariantNumeric="tabular-nums">
+            Vprašanje {index + 1}{' '}
+            <Text as="span" color="app.textFaint">
+              od {questions.length}
+            </Text>
+          </Box>
+        }
+        actions={
+          // Deliberately quiet, and away from the primary Naprej/Zaključi button.
           <Button
-            onClick={endRound}
-            variant="ghost"
-            size="xs"
-            flexShrink="0"
-            color="app.textFaint"
+            h="32px"
+            px="3"
+            gap="1.5"
+            fontSize="13px"
+            {...secondaryButton}
+            borderColor="app.border"
+            borderRadius="8px"
+            color="app.textMuted"
             _hover={{ bg: 'app.surfaceHover', color: 'app.text' }}
+            onClick={endRound}
           >
             <LuX /> Končaj kviz
           </Button>
-        </Flex>
-
+        }
+        aside={
+          <>
+            <RoundPanel right={right} wrong={wrong} predmet={review?.predmet ?? config?.predmet} stats={stats} />
+            {openMistakes > 0 && selection && (
+              <chakra.button
+                type="button"
+                display="flex"
+                alignItems="center"
+                gap="3"
+                px="4"
+                py="3.5"
+                {...card}
+                color="app.text"
+                textAlign="left"
+                cursor="pointer"
+                _hover={{ bg: 'app.surfaceHover' }}
+                title="Vprašanja z napačnim odgovorom, še enkrat. Brez klica AI. Ta krog se konča."
+                onClick={() => void startReview(selection)}
+              >
+                <Flex as="span" color="app.textMuted">
+                  <LuHistory />
+                </Flex>
+                <Box as="span" flex="1" minW="0">
+                  <Text as="span" display="block" fontSize="13px" fontWeight="600">
+                    Ponovi napake
+                  </Text>
+                  <Text as="span" display="block" fontSize="12px" color="app.textFaint">
+                    {openMistakes} {odprtih(openMistakes)} {napak(openMistakes)}
+                  </Text>
+                </Box>
+                <Flex as="span" color="app.textFaint">
+                  <LuChevronRight />
+                </Flex>
+              </chakra.button>
+            )}
+            <KeyLegend />
+          </>
+        }
+      >
         {/* Outside the sliding body, so the bar holds still between questions. */}
-        <QuizProgress answered={answered} total={questions.length} />
+        <QuizProgress results={results} current={index} />
 
-        {/* The counter and topic travel with their question: in a fixed row they
-            would show the next question's labels while the old one is leaving. */}
         <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={question.id}
-            variants={slideAcross}
-            initial="hidden"
-            animate="shown"
-            exit="exit"
-          >
+          <motion.div key={question.id} variants={slideAcross} initial="hidden" animate="shown" exit="exit">
             <QuizQuestionCard
               question={question}
-              position={index + 1}
-              total={questions.length}
               chosen={answers[index]}
               onChoose={answer}
               onNext={next}
@@ -293,7 +403,7 @@ export default function QuestionGeneratorTab(): React.JSX.Element {
             />
           </motion.div>
         </AnimatePresence>
-      </Stack>
+      </Page>
     )
   }
 

@@ -24,6 +24,15 @@ export function odprtih(count: number): string {
   return 'odprtih'
 }
 
+/** The noun that goes with odprtih(): 1 napaka, 2 napaki, 3–4 napake, 5+ napak. */
+export function napak(count: number): string {
+  const tail = count % 100
+  if (tail === 1) return 'napaka'
+  if (tail === 2) return 'napaki'
+  if (tail === 3 || tail === 4) return 'napake'
+  return 'napak'
+}
+
 /** 1 odgovor, 2 odgovora, 3–4 odgovori, 5+ odgovorov (by the last two digits). */
 export function odgovorov(count: number): string {
   const tail = count % 100

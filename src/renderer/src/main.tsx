@@ -4,6 +4,9 @@ import { ChakraProvider } from '@chakra-ui/react'
 import { MotionConfig } from 'motion/react'
 import App from './App'
 import { system } from './theme/system'
+// Bundled into the app (the CSP allows no remote fonts, and the app makes no
+// network calls but the AI's).
+import '@fontsource-variable/archivo'
 import './theme/theme.css'
 
 const container = document.getElementById('root')

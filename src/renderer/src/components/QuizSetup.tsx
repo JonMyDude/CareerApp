@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Box, Button, Flex, NativeSelect, Stack, Text } from '@chakra-ui/react'
+import { Box, Button, Flex, Stack, Text } from '@chakra-ui/react'
 import { LuHistory, LuPlay } from 'react-icons/lu'
+import { card, primaryButton, secondaryButton } from '../theme/styles'
+import Dropdown from './Dropdown'
+import Page from './Page'
 import {
   DIFFICULTY_LABELS,
   MAX_QUESTIONS,
@@ -23,7 +26,7 @@ interface Props {
 
 const RANDOM_OPTION = { value: RANDOM, label: 'Naključno' }
 
-/** Native select — the option lists are fixed, so there is nothing to search. */
+/** A labelled dropdown — the option lists are fixed, so there is nothing to search. */
 function Select({
   label,
   value,
@@ -39,28 +42,18 @@ function Select({
 }): React.JSX.Element {
   return (
     <Box>
-      <Text as="label" display="block" fontSize="sm" color="app.textMuted" mb="1.5">
+      <Text fontSize="13px" fontWeight="600" color="app.textMuted" mb="1.5">
         {label}
       </Text>
-      <NativeSelect.Root size="md">
-        <NativeSelect.Field
-          aria-label={label}
-          value={value}
-          onChange={(event) => onChange(event.currentTarget.value)}
-          bg="app.surface"
-          color="app.text"
-          borderColor="app.border"
-          _hover={{ borderColor: 'app.borderStrong' }}
-        >
-          {placeholder && <option value="">{placeholder}</option>}
-          {options.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </NativeSelect.Field>
-        <NativeSelect.Indicator color="app.textMuted" />
-      </NativeSelect.Root>
+      <Dropdown
+        label={label}
+        h="40px"
+        bg="app.surfaceSubtle"
+        value={value}
+        options={options}
+        onChange={onChange}
+        placeholder={placeholder}
+      />
     </Box>
   )
 }
@@ -112,88 +105,89 @@ export default function QuizSetup({ onStart, onReview }: Props): React.JSX.Eleme
   const mistakeCount = countMistakes(stats, razred, predmet)
 
   return (
-    <Stack gap="5" maxW="520px" mx="auto">
-      <Box>
-        <Text fontWeight="medium" color="app.text" mb="1">
-          Ponovi šolsko snov
-        </Text>
-        <Text fontSize="sm" color="app.textMuted">
+    <Page
+      eyebrow="Kviz"
+      title="Ponovi šolsko snov"
+      aside={stats && stats.subjects.length > 0 ? <QuizStatsPanel stats={stats} /> : undefined}
+    >
+      <Stack {...card} gap="5" p="6">
+        <Text fontSize="14px" color="app.textMuted">
           Izberi razred in predmet. Vprašanja so iz slovenskega učnega načrta.
         </Text>
-      </Box>
 
-      <Select
-        label="Razred"
-        value={razred}
-        onChange={changeRazred}
-        placeholder="Izberi razred…"
-        options={[RANDOM_OPTION, ...RAZREDI.map((value) => ({ value, label: value }))]}
-      />
+        <Select
+          label="Razred"
+          value={razred}
+          onChange={changeRazred}
+          placeholder="Izberi razred…"
+          options={[RANDOM_OPTION, ...RAZREDI.map((value) => ({ value, label: value }))]}
+        />
 
-      <Select
-        label="Predmet"
-        value={predmet}
-        onChange={setPredmet}
-        placeholder={razred ? 'Izberi predmet…' : 'Najprej izberi razred'}
-        options={[RANDOM_OPTION, ...subjects.map((value) => ({ value, label: value }))]}
-      />
+        <Select
+          label="Predmet"
+          value={predmet}
+          onChange={setPredmet}
+          placeholder={razred ? 'Izberi predmet…' : 'Najprej izberi razred'}
+          options={[RANDOM_OPTION, ...subjects.map((value) => ({ value, label: value }))]}
+        />
 
-      <Flex gap="4">
-        <Box flex="1">
-          <Select
-            label="Težavnost"
-            value={String(tezavnost)}
-            onChange={(value) => setTezavnost(Number(value))}
-            options={[1, 2, 3].map((level) => ({
-              value: String(level),
-              label: `${level} — ${DIFFICULTY_LABELS[level].split(' — ')[0]}`
-            }))}
-          />
-        </Box>
-        <Box flex="1">
-          <Select
-            label="Število vprašanj"
-            value={String(stevilo)}
-            onChange={(value) => setStevilo(Number(value))}
-            options={Array.from({ length: MAX_QUESTIONS - MIN_QUESTIONS + 1 }, (_, i) => {
-              const n = MIN_QUESTIONS + i
-              return { value: String(n), label: String(n) }
-            })}
-          />
-        </Box>
-      </Flex>
+        <Flex gap="4">
+          <Box flex="1">
+            <Select
+              label="Težavnost"
+              value={String(tezavnost)}
+              onChange={(value) => setTezavnost(Number(value))}
+              options={[1, 2, 3].map((level) => ({
+                value: String(level),
+                label: `${level} — ${DIFFICULTY_LABELS[level].split(' — ')[0]}`
+              }))}
+            />
+          </Box>
+          <Box flex="1">
+            <Select
+              label="Število vprašanj"
+              value={String(stevilo)}
+              onChange={(value) => setStevilo(Number(value))}
+              options={Array.from({ length: MAX_QUESTIONS - MIN_QUESTIONS + 1 }, (_, i) => {
+                const n = MIN_QUESTIONS + i
+                return { value: String(n), label: String(n) }
+              })}
+            />
+          </Box>
+        </Flex>
 
-      <Text fontSize="xs" color="app.textFaint">
-        {DIFFICULTY_LABELS[tezavnost]}
-      </Text>
+        <Text fontSize="12px" color="app.textFaint" mt="-2">
+          {DIFFICULTY_LABELS[tezavnost]}
+        </Text>
 
-      <Flex gap="2" wrap="wrap">
-        <Button
-          onClick={() => onStart({ razred, predmet, tezavnost, stevilo })}
-          disabled={!ready}
-          bg="app.accent"
-          color="app.accentFg"
-          _hover={{ bg: 'app.accentHover' }}
-          px="6"
-        >
-          <LuPlay /> Začni
-        </Button>
-        {mistakeCount > 0 && (
+        <Flex gap="2" wrap="wrap">
           <Button
-            onClick={() => onReview({ razred, predmet, tezavnost, stevilo })}
-            variant="outline"
-            color="app.text"
-            borderColor="app.border"
-            _hover={{ bg: 'app.surfaceHover' }}
-            title="Vprašanja z napačnim odgovorom, še enkrat. Brez klica AI."
-            data-review
+            onClick={() => onStart({ razred, predmet, tezavnost, stevilo })}
+            disabled={!ready}
+            h="42px"
+            px="5"
+            gap="2"
+            fontSize="14px"
+            {...primaryButton}
           >
-            <LuHistory /> Ponovi napake ({mistakeCount})
+            <LuPlay /> Začni
           </Button>
-        )}
-      </Flex>
-
-      {stats && stats.subjects.length > 0 && <QuizStatsPanel stats={stats} />}
-    </Stack>
+          {mistakeCount > 0 && (
+            <Button
+              onClick={() => onReview({ razred, predmet, tezavnost, stevilo })}
+              h="42px"
+              px="4"
+              gap="2"
+              fontSize="14px"
+              {...secondaryButton}
+              title="Vprašanja z napačnim odgovorom, še enkrat. Brez klica AI."
+              data-review
+            >
+              <LuHistory /> Ponovi napake ({mistakeCount})
+            </Button>
+          )}
+        </Flex>
+      </Stack>
+    </Page>
   )
 }

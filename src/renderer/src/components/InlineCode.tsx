@@ -19,9 +19,9 @@ export default function InlineCode({ text }: { text: string }): React.JSX.Elemen
             key={index}
             fontFamily="ui-monospace, 'Cascadia Mono', Consolas, monospace"
             fontSize="0.88em"
-            px="1"
-            py="0.5"
-            borderRadius="sm"
+            px="1.5"
+            py="1px"
+            borderRadius="5px"
             borderWidth="1px"
             borderColor="app.border"
             bg="app.surfaceHover"

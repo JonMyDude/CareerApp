@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import type { AppApi } from '../../preload'
 
 /** The bridge the preload script installs. This is all the renderer can reach. */

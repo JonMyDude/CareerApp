@@ -11,9 +11,13 @@ import type { DailyEntry } from './types'
  */
 
 export interface InterestProgress {
+  /** The interest's id, or its title for entries saved before ids were. */
+  key: string
   title: string
   done: number
   total: number
+  /** Local day of its newest suggestion. */
+  lastDate: string
 }
 
 export interface Progress {
@@ -65,11 +69,17 @@ export function computeProgress(entries: DailyEntry[], now = new Date(), windowD
   }
 
   // Grouped by interest id, so renaming an interest doesn't split its history.
-  // Entries arrive newest first, so the first title seen is the current one.
+  // Entries arrive newest first, so the first title and date seen are the current ones.
   const groups = new Map<string, InterestProgress>()
   for (const entry of counted) {
     const key = entry.interestId || entry.interestTitle
-    const group = groups.get(key) ?? { title: entry.interestTitle, done: 0, total: 0 }
+    const group = groups.get(key) ?? {
+      key,
+      title: entry.interestTitle,
+      done: 0,
+      total: 0,
+      lastDate: entry.date
+    }
     group.total++
     if (entry.done) group.done++
     groups.set(key, group)

@@ -1,31 +1,39 @@
-import { Button, Flex } from '@chakra-ui/react'
+import { Button, Flex, type FlexProps } from '@chakra-ui/react'
 
-interface Props<T extends string | number> {
+interface Props<T extends string | number> extends Omit<FlexProps, 'onChange'> {
   /** Accessible name of the group, e.g. "Show". */
   label: string
   value: T
-  options: { value: T; label: string }[]
+  options: { value: T; label: string; icon?: React.ReactNode }[]
   onChange: (value: T) => void
 }
 
-/** A row of pill buttons, one selected. Used by the history and interests filters. */
+/**
+ * A row of options, one selected: the history and interest filters, the new
+ * interest's importance, the theme. Extra props style the frame, e.g. a
+ * taller one inside the add-interest bar.
+ */
 export default function SegmentedControl<T extends string | number>({
   label,
   value,
   options,
-  onChange
+  onChange,
+  ...frame
 }: Props<T>): React.JSX.Element {
   return (
     <Flex
       role="radiogroup"
       aria-label={label}
       gap="0.5"
-      p="0.5"
+      p="3px"
+      h="38px"
       w="fit-content"
-      bg="app.surfaceSubtle"
+      flexShrink="0"
+      bg="app.surface"
       borderWidth="1px"
       borderColor="app.border"
-      borderRadius="md"
+      borderRadius="9px"
+      {...frame}
     >
       {options.map((option) => {
         const selected = value === option.value
@@ -34,15 +42,18 @@ export default function SegmentedControl<T extends string | number>({
             key={option.value}
             role="radio"
             aria-checked={selected}
-            size="xs"
-            variant="ghost"
-            px="2.5"
-            bg={selected ? 'app.surface' : 'transparent'}
+            h="full"
+            px="3"
+            gap="1.5"
+            fontSize="13px"
+            fontWeight="600"
+            borderRadius="6px"
+            bg={selected ? 'app.surfaceHover' : 'transparent'}
             color={selected ? 'app.text' : 'app.textMuted'}
-            boxShadow={selected ? 'app' : 'none'}
-            _hover={{ color: 'app.text', bg: selected ? 'app.surface' : 'app.surfaceHover' }}
+            _hover={{ color: 'app.text', bg: selected ? 'app.surfaceHover' : 'transparent' }}
             onClick={() => onChange(option.value)}
           >
+            {option.icon}
             {option.label}
           </Button>
         )

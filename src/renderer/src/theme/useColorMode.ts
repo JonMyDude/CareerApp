@@ -25,8 +25,9 @@ function resolve(preference: ColorModePreference): ResolvedColorMode {
 function syncFrame(): void {
   const styles = getComputedStyle(document.documentElement)
   const read = (name: string): string => styles.getPropertyValue(name).trim()
+  // The buttons sit on the page background, above the scrolling content.
   const colors = {
-    background: read('--app-surface'),
+    background: read('--app-bg'),
     symbols: read('--app-text-muted'),
     appBg: read('--app-bg')
   }
@@ -50,15 +51,13 @@ interface ColorModeState {
   /** What is actually on screen. */
   resolved: ResolvedColorMode
   setPreference: (preference: ColorModePreference) => void
-  /** Flip between light and dark, leaving 'system' behind. */
-  toggle: () => void
 }
 
 /**
- * One theme state for the whole app — the rail's toggle and the Settings page
- * both read and change it. A hook with local state would give each its own copy.
+ * One theme state for the whole app, changed from the Settings page. A store
+ * rather than a hook with local state, so every reader sees the same value.
  */
-export const useColorMode = create<ColorModeState>((set, get) => ({
+export const useColorMode = create<ColorModeState>((set) => ({
   preference: readPreference(),
   resolved: resolve(readPreference()),
 
@@ -67,9 +66,7 @@ export const useColorMode = create<ColorModeState>((set, get) => ({
     const resolved = resolve(preference)
     set({ preference, resolved })
     apply(resolved)
-  },
-
-  toggle: () => get().setPreference(get().resolved === 'dark' ? 'light' : 'dark')
+  }
 }))
 
 // Stamped at import, before the first render, so the wrong palette never shows.

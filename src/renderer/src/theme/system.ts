@@ -5,6 +5,10 @@ import { createSystem, defaultConfig, defineConfig } from '@chakra-ui/react'
  * theme.css. Components reference them as `bg="app.surface"` and the actual
  * colour is resolved by CSS, which is what makes light/dark a pure CSS swap.
  */
+
+/** Archivo is bundled (see main.tsx), so the app never fetches a font. */
+const FONT = '"Archivo Variable", Archivo, system-ui, "Segoe UI", sans-serif'
+
 const config = defineConfig({
   theme: {
     tokens: {
@@ -22,29 +26,50 @@ const config = defineConfig({
           accent: { value: 'var(--app-accent)' },
           accentHover: { value: 'var(--app-accent-hover)' },
           accentSubtle: { value: 'var(--app-accent-subtle)' },
+          accentMuted: { value: 'var(--app-accent-muted)' },
           accentFg: { value: 'var(--app-accent-fg)' },
           danger: { value: 'var(--app-danger)' },
           dangerHover: { value: 'var(--app-danger-hover)' },
           dangerSubtle: { value: 'var(--app-danger-subtle)' },
           success: { value: 'var(--app-success)' },
+          successSubtle: { value: 'var(--app-success-subtle)' },
+          streak: { value: 'var(--app-streak)' },
+          streakSubtle: { value: 'var(--app-streak-subtle)' },
           railBg: { value: 'var(--app-rail-bg)' },
           railHoverBg: { value: 'var(--app-rail-hover-bg)' },
           railIcon: { value: 'var(--app-rail-icon)' },
           railActiveBg: { value: 'var(--app-rail-active-bg)' },
-          railActiveFg: { value: 'var(--app-rail-active-fg)' }
+          switchKnob: { value: 'var(--app-switch-knob)' }
         }
+      },
+      fonts: {
+        heading: { value: FONT },
+        body: { value: FONT }
       },
       shadows: {
         app: { value: 'var(--app-shadow)' }
+      }
+    },
+    semanticTokens: {
+      colors: {
+        // Every Chakra focus ring reads this (colorPalette is gray). Its own
+        // value is a fixed grey that ignores data-theme.
+        gray: {
+          focusRing: { value: 'var(--app-accent)' }
+        }
       }
     }
   },
   globalCss: {
     'html, body': {
-      fontFamily: 'system-ui, "Segoe UI", Roboto, sans-serif'
+      fontFamily: FONT
+    },
+    body: {
+      fontSize: '15px',
+      lineHeight: '1.55'
     },
     '*:focus-visible': {
-      outline: '2px solid var(--app-focus-ring)',
+      outline: '2px solid var(--app-accent)',
       outlineOffset: '2px'
     }
   }

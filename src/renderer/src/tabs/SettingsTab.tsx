@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react'
-import { Box, Button, chakra, Flex, Heading, Input, Spinner, Stack, Text } from '@chakra-ui/react'
+import { Box, Button, Flex, Heading, Input, Spinner, Stack, Text } from '@chakra-ui/react'
 import { LuBellRing, LuCheck, LuFileDown, LuMonitor, LuMoon, LuSun } from 'react-icons/lu'
 import { TIME_PATTERN } from '@shared/reminder'
 import type { SettingsInfo, SettingsPatch } from '@shared/types'
 import ApiKeyPanel from '../components/ApiKeyPanel'
+import Page from '../components/Page'
+import SegmentedControl from '../components/SegmentedControl'
+import ToggleSwitch from '../components/ToggleSwitch'
+import { useHistoryExport } from '../lib/exportHistory'
 import { ipcErrorMessage } from '../store/ipcError'
 import { useSettingsStore } from '../store/useSettingsStore'
+import { card, field, primaryButton, quietButton, secondaryButton } from '../theme/styles'
 import { useColorMode, type ColorModePreference } from '../theme/useColorMode'
 
 /**
@@ -24,19 +29,12 @@ function Section({
   children: React.ReactNode
 }): React.JSX.Element {
   return (
-    <Box
-      as="section"
-      py="6"
-      borderTopWidth="1px"
-      borderColor="app.border"
-      // The page heading comes first, so this is :first-of-type, not :first-child.
-      css={{ '&:first-of-type': { borderTopWidth: '0', paddingTop: '0' } }}
-    >
-      <Heading size="sm" color="app.text" mb="1">
+    <Box as="section" {...card} p="6">
+      <Heading as="h2" fontSize="17px" fontWeight="600" color="app.text" mb="1">
         {title}
       </Heading>
       {description && (
-        <Text fontSize="sm" color="app.textMuted" mb="4">
+        <Text fontSize="13px" color="app.textMuted" mb="5">
           {description}
         </Text>
       )}
@@ -60,17 +58,17 @@ function Field({
 }): React.JSX.Element {
   return (
     <Box>
-      <Text asChild display="block" fontSize="sm" fontWeight="medium" color="app.text" mb="1.5">
+      <Text asChild display="block" fontSize="13px" fontWeight="600" color="app.text" mb="1.5">
         <label htmlFor={htmlFor}>{label}</label>
       </Text>
       {children}
       {error ? (
-        <Text fontSize="xs" color="app.danger" mt="1.5" role="alert">
+        <Text fontSize="12px" color="app.danger" mt="1.5" role="alert">
           {error}
         </Text>
       ) : (
         hint && (
-          <Text fontSize="xs" color="app.textFaint" mt="1.5" lineHeight="1.5">
+          <Text fontSize="12px" color="app.textFaint" mt="1.5" lineHeight="1.5">
             {hint}
           </Text>
         )
@@ -79,13 +77,8 @@ function Field({
   )
 }
 
-const inputStyle = {
-  size: 'sm' as const,
-  bg: 'app.surface',
-  color: 'app.text',
-  borderColor: 'app.border',
-  _placeholder: { color: 'app.textFaint' }
-}
+/** Inputs sit on a card here, so they take the subtle surface to stand apart from it. */
+const inputStyle = { ...field, h: '38px', bg: 'app.surfaceSubtle' }
 
 function SaveButton({
   onClick,
@@ -97,17 +90,7 @@ function SaveButton({
   loading: boolean
 }): React.JSX.Element {
   return (
-    <Button
-      size="sm"
-      onClick={onClick}
-      disabled={disabled}
-      loading={loading}
-      bg="app.accent"
-      color="app.accentFg"
-      _hover={{ bg: 'app.accentHover' }}
-      px="4"
-      flexShrink="0"
-    >
+    <Button h="38px" px="4" flexShrink="0" onClick={onClick} disabled={disabled} loading={loading} {...primaryButton}>
       Save
     </Button>
   )
@@ -122,38 +105,13 @@ const THEME_OPTIONS: { value: ColorModePreference; label: string; icon: React.Re
 function ThemePicker(): React.JSX.Element {
   const { preference, setPreference } = useColorMode()
   return (
-    <Flex
-      role="radiogroup"
-      aria-label="Theme"
-      gap="1"
-      p="1"
-      w="fit-content"
+    <SegmentedControl
+      label="Theme"
+      value={preference}
+      options={THEME_OPTIONS}
+      onChange={setPreference}
       bg="app.surfaceSubtle"
-      borderWidth="1px"
-      borderColor="app.border"
-      borderRadius="md"
-    >
-      {THEME_OPTIONS.map((option) => {
-        const selected = preference === option.value
-        return (
-          <Button
-            key={option.value}
-            role="radio"
-            aria-checked={selected}
-            size="sm"
-            variant="ghost"
-            px="3"
-            bg={selected ? 'app.surface' : 'transparent'}
-            color={selected ? 'app.text' : 'app.textMuted'}
-            boxShadow={selected ? 'app' : 'none'}
-            _hover={{ color: 'app.text', bg: selected ? 'app.surface' : 'app.surfaceHover' }}
-            onClick={() => setPreference(option.value)}
-          >
-            {option.icon} {option.label}
-          </Button>
-        )
-      })}
-    </Flex>
+    />
   )
 }
 
@@ -204,15 +162,7 @@ function ModelField({ settings }: { settings: SettingsInfo }): React.JSX.Element
           loading={saving}
         />
         {custom && (
-          <Button
-            size="sm"
-            variant="ghost"
-            color="app.textMuted"
-            _hover={{ bg: 'app.surfaceHover', color: 'app.text' }}
-            onClick={() => void save('')}
-            disabled={saving}
-            flexShrink="0"
-          >
+          <Button h="38px" px="3.5" flexShrink="0" {...quietButton} onClick={() => void save('')} disabled={saving}>
             Use default
           </Button>
         )}
@@ -277,53 +227,6 @@ function BudgetField({ settings }: { settings: SettingsInfo }): React.JSX.Elemen
   )
 }
 
-/**
- * On/off switch drawn from app tokens only. Chakra's own Switch takes its
- * colours from a palette that ignores our data-theme, so it wouldn't follow
- * dark mode.
- */
-function ToggleSwitch({
-  checked,
-  onChange,
-  label,
-  disabled = false
-}: {
-  checked: boolean
-  onChange: (next: boolean) => void
-  label: string
-  disabled?: boolean
-}): React.JSX.Element {
-  return (
-    <chakra.button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      flexShrink="0"
-      w="36px"
-      h="20px"
-      p="2px"
-      borderRadius="full"
-      bg={checked ? 'app.accent' : 'app.borderStrong'}
-      transition="background-color 150ms ease"
-      cursor={disabled ? 'not-allowed' : 'pointer'}
-      opacity={disabled ? 0.5 : 1}
-    >
-      <Box
-        w="16px"
-        h="16px"
-        borderRadius="full"
-        bg="app.surface"
-        boxShadow="app"
-        transform={checked ? 'translateX(16px)' : undefined}
-        transition="transform 150ms ease"
-      />
-    </chakra.button>
-  )
-}
-
 function SwitchRow({
   label,
   hint,
@@ -340,10 +243,10 @@ function SwitchRow({
   return (
     <Flex align="flex-start" justify="space-between" gap="6">
       <Box>
-        <Text fontSize="sm" fontWeight="medium" color="app.text">
+        <Text fontSize="14px" fontWeight="600" color="app.text">
           {label}
         </Text>
-        <Text fontSize="xs" color="app.textFaint" mt="0.5" lineHeight="1.5">
+        <Text fontSize="12px" color="app.textFaint" mt="0.5" lineHeight="1.5">
           {hint}
         </Text>
       </Box>
@@ -427,7 +330,7 @@ function ReminderSection({ settings }: { settings: SettingsInfo }): React.JSX.El
         onChange={(closeToTray) => void save({ closeToTray })}
       />
       {settings.reminder.enabled && !settings.closeToTray && (
-        <Text fontSize="xs" color="app.textMuted" data-tray-hint>
+        <Text fontSize="12px" color="app.textMuted" data-tray-hint>
           Reminders only fire while the app is open. Turn on the tray to get them after closing the
           window.
         </Text>
@@ -444,20 +347,12 @@ function ReminderSection({ settings }: { settings: SettingsInfo }): React.JSX.El
         onChange={(openAtLogin) => void save({ openAtLogin })}
       />
       <Box>
-        <Button
-          size="sm"
-          variant="outline"
-          color="app.text"
-          borderColor="app.border"
-          _hover={{ bg: 'app.surfaceHover' }}
-          loading={testing}
-          onClick={() => void sendTest()}
-        >
+        <Button h="36px" px="3.5" gap="2" {...secondaryButton} loading={testing} onClick={() => void sendTest()}>
           <LuBellRing /> Send a test notification
         </Button>
         {tested && (
           <Text
-            fontSize="xs"
+            fontSize="12px"
             mt="1.5"
             color={tested === 'shown' ? 'app.success' : 'app.textMuted'}
             data-test-result
@@ -467,7 +362,7 @@ function ReminderSection({ settings }: { settings: SettingsInfo }): React.JSX.El
         )}
       </Box>
       {error && (
-        <Text fontSize="xs" color="app.danger" role="alert">
+        <Text fontSize="12px" color="app.danger" role="alert">
           {error}
         </Text>
       )}
@@ -476,23 +371,7 @@ function ReminderSection({ settings }: { settings: SettingsInfo }): React.JSX.El
 }
 
 function ExportRow(): React.JSX.Element {
-  const [busy, setBusy] = useState(false)
-  const [saved, setSaved] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  async function run(): Promise<void> {
-    setBusy(true)
-    setError(null)
-    try {
-      const result = await window.api.export.history()
-      // Cancelled: say nothing, keep whatever was shown before.
-      if (result.saved) setSaved(result.fileName)
-    } catch (failure) {
-      setError(ipcErrorMessage(failure))
-    } finally {
-      setBusy(false)
-    }
-  }
+  const { run, busy, saved, error } = useHistoryExport()
 
   return (
     <Field
@@ -501,19 +380,11 @@ function ExportRow(): React.JSX.Element {
       hint="Every daily suggestion with its note and explanation, newest first, as a Markdown file you choose where to save."
     >
       <Flex align="center" gap="3" wrap="wrap">
-        <Button
-          size="sm"
-          variant="outline"
-          color="app.text"
-          borderColor="app.border"
-          _hover={{ bg: 'app.surfaceHover' }}
-          loading={busy}
-          onClick={() => void run()}
-        >
+        <Button h="36px" px="3.5" gap="2" {...secondaryButton} loading={busy} onClick={() => void run()}>
           <LuFileDown /> Export to Markdown…
         </Button>
         {saved && (
-          <Flex align="center" gap="1" fontSize="sm" color="app.success" data-export-result>
+          <Flex align="center" gap="1" fontSize="13px" color="app.success" data-export-result>
             <LuCheck />
             <Text>Saved {saved}</Text>
             <Button
@@ -541,65 +412,63 @@ export default function SettingsTab(): React.JSX.Element {
   }, [load])
 
   return (
-    <Stack gap="0" maxW="640px" mx="auto">
-      <Heading size="sm" color="app.text" mb="6">
-        Settings
-      </Heading>
+    <Page eyebrow="Each change saves on its own" title="Settings">
+      <Stack gap="4" maxW="720px">
+        <Section title="Appearance" description="System follows Windows' own light or dark setting.">
+          <ThemePicker />
+        </Section>
 
-      <Section title="Appearance" description="System follows Windows' own light or dark setting.">
-        <ThemePicker />
-      </Section>
+        <Section
+          title="Gemini"
+          description="Used for daily suggestions, explanations and quiz questions. The only network calls the app makes go to Google's API."
+        >
+          {!settings ? (
+            <Spinner color="app.accent" size="sm" />
+          ) : (
+            <>
+              <Box>
+                <Flex
+                  align="center"
+                  gap="1.5"
+                  fontSize="14px"
+                  mb="3"
+                  color={settings.hasApiKey ? 'app.success' : 'app.textMuted'}
+                >
+                  {settings.hasApiKey && <LuCheck />}
+                  <Text>
+                    {settings.hasApiKey
+                      ? 'An API key is saved. It never leaves the background process.'
+                      : 'No API key yet. Suggestions, explanations and quizzes need one.'}
+                  </Text>
+                </Flex>
+                <ApiKeyPanel variant={settings.hasApiKey ? 'replace' : 'setup'} />
+              </Box>
+              {/* Keyed on the saved value, so a change from elsewhere resets the draft. */}
+              <ModelField key={`model:${settings.model}`} settings={settings} />
+              <BudgetField key={`budget:${settings.dailyTokenBudget}`} settings={settings} />
+            </>
+          )}
+        </Section>
 
-      <Section
-        title="Gemini"
-        description="Used for daily suggestions, explanations and quiz questions. The only network calls the app makes go to Google's API."
-      >
-        {!settings ? (
-          <Spinner color="app.accent" size="sm" />
-        ) : (
-          <>
-            <Box>
-              <Flex
-                align="center"
-                gap="1.5"
-                fontSize="sm"
-                mb="3"
-                color={settings.hasApiKey ? 'app.success' : 'app.textMuted'}
-              >
-                {settings.hasApiKey && <LuCheck />}
-                <Text>
-                  {settings.hasApiKey
-                    ? 'An API key is saved. It never leaves the background process.'
-                    : 'No API key yet. Suggestions, explanations and quizzes need one.'}
-                </Text>
-              </Flex>
-              <ApiKeyPanel variant={settings.hasApiKey ? 'replace' : 'setup'} />
-            </Box>
-            {/* Keyed on the saved value, so a change from elsewhere resets the draft. */}
-            <ModelField key={`model:${settings.model}`} settings={settings} />
-            <BudgetField key={`budget:${settings.dailyTokenBudget}`} settings={settings} />
-          </>
-        )}
-      </Section>
+        <Section title="Daily reminder" description="A nudge at the time you pick, while the app is running.">
+          {settings ? (
+            <ReminderSection
+              // Remount when the saved time changes elsewhere, so the draft follows it.
+              key={`reminder:${settings.reminder.time}`}
+              settings={settings}
+            />
+          ) : (
+            <Spinner color="app.accent" size="sm" />
+          )}
+        </Section>
 
-      <Section
-        title="Daily reminder"
-        description="A nudge at the time you pick, while the app is running."
-      >
-        {settings ? (
-          <ReminderSection
-            // Remount when the saved time changes elsewhere, so the draft follows it.
-            key={`reminder:${settings.reminder.time}`}
-            settings={settings}
-          />
-        ) : (
-          <Spinner color="app.accent" size="sm" />
-        )}
-      </Section>
-
-      <Section title="Data" description="Everything the app keeps is stored on this computer, in its app data folder.">
-        <ExportRow />
-      </Section>
-    </Stack>
+        <Section
+          title="Data"
+          description="Everything the app keeps is stored on this computer, in its app data folder."
+        >
+          <ExportRow />
+        </Section>
+      </Stack>
+    </Page>
   )
 }

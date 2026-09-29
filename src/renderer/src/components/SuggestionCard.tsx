@@ -1,308 +1,424 @@
-import { useState } from 'react'
-import { Box, Button, Flex, IconButton, Input, Text } from '@chakra-ui/react'
+import { useId, useState } from 'react'
+import { Box, Button, chakra, Flex, Grid, Heading, IconButton, Input, Text } from '@chakra-ui/react'
 import { AnimatePresence, motion } from 'motion/react'
-import { LuBookOpen, LuCheck, LuPencilLine, LuTrash2 } from 'react-icons/lu'
+import { LuBookOpen, LuCheck, LuPencilLine, LuShuffle, LuTrash2 } from 'react-icons/lu'
 import { MAX_REFLECTION_LENGTH, type DailyEntry } from '@shared/types'
 import { formatEntryDate } from '../lib/dates'
-import { crossfade, fadeUp, rest, tick } from '../theme/motion'
+import { crossfade, fadeUp, pop, rest, tick } from '../theme/motion'
+import { card, field, iconButton, kicker, primaryButton, quietButton, secondaryButton } from '../theme/styles'
+import InlineCode from './InlineCode'
 
-interface Props {
-  entry: DailyEntry
-  /** Today's entry gets the full card; past ones sit flatter in the feed. */
-  featured?: boolean
-  /** Rendered at the card's top-right, e.g. the reroll button. */
-  action?: React.ReactNode
+/**
+ * Today's suggestion as a card, and the earlier ones as rows of one list.
+ * Both can be ticked off, noted and explained; only history rows are deleted —
+ * today's is rerolled instead.
+ */
+
+interface Handlers {
   onToggleDone: (done: boolean) => void
-  /** Omitted for today's entry — that one is rerolled, not deleted. */
-  onDelete?: () => void
-  /** Sends the suggestion to the Explanation tab. */
-  onExplain?: () => void
   /** Saves the one-line reflection; '' clears it. Rejects if the save failed. */
-  onSaveNote?: (note: string) => Promise<void>
+  onSaveNote: (note: string) => Promise<void>
+  /** Sends the suggestion to the Explanation tab. */
+  onExplain: () => void
 }
 
-export default function SuggestionCard({
-  entry,
-  featured = false,
-  action,
-  onToggleDone,
-  onDelete,
-  onExplain,
-  onSaveNote
-}: Props): React.JSX.Element {
-  // Cached explanations open instantly and free; the rest spend tokens.
-  const explained = entry.explanation !== null
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
+/** The draft of the one-line reflection, and ticking off, which prompts for one. */
+function useNote(entry: DailyEntry, { onToggleDone, onSaveNote }: Handlers) {
   /** The note being written; null while the editor is closed. */
-  const [noteDraft, setNoteDraft] = useState<string | null>(null)
-  const [savingNote, setSavingNote] = useState(false)
+  const [draft, setDraft] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
   function toggleDone(): void {
     const next = !entry.done
     onToggleDone(next)
     // Ticking off is the moment to jot down how it went — optional, one line.
-    if (next && onSaveNote && !entry.note) setNoteDraft('')
+    if (next && !entry.note) setDraft('')
     // Un-ticked straight away: drop the prompt it just opened.
-    if (!next && noteDraft === '') setNoteDraft(null)
+    if (!next && draft === '') setDraft(null)
   }
 
-  async function saveNote(): Promise<void> {
-    if (!onSaveNote || noteDraft === null || savingNote) return
+  async function save(): Promise<void> {
+    if (draft === null || saving) return
     // Nothing changed (including an empty "skip"): just close, no write.
-    if (noteDraft.trim() === entry.note) {
-      setNoteDraft(null)
+    if (draft.trim() === entry.note) {
+      setDraft(null)
       return
     }
-    setSavingNote(true)
+    setSaving(true)
     try {
-      await onSaveNote(noteDraft)
-      setNoteDraft(null)
+      await onSaveNote(draft)
+      setDraft(null)
     } catch {
       // The tab shows the error; the draft stays so nothing typed is lost.
     } finally {
-      setSavingNote(false)
+      setSaving(false)
     }
   }
 
+  return { draft, setDraft, saving, toggleDone, save }
+}
+
+type NoteState = ReturnType<typeof useNote>
+
+/** The reflection as saved, under the suggestion. */
+function NoteLine({ note, compact = false }: { note: string; compact?: boolean }): React.JSX.Element {
   return (
-    <Box
-      data-entry-id={entry.id}
-      bg={featured ? 'app.surface' : 'transparent'}
-      borderWidth={featured ? '1px' : '0'}
-      borderColor="app.border"
-      borderRadius="md"
-      boxShadow={featured ? 'app' : 'none'}
-      p={featured ? '5' : '0'}
-    >
-      {/* Finished entries fade back — but not the note editor below, which
-          would otherwise look disabled right when it asks for input. */}
-      <Box opacity={entry.done ? 0.65 : 1}>
-        <Flex align="center" justify="space-between" gap="3" mb="2">
-          <Flex align="center" gap="2" minW="0">
-            {/* Ticking bumps the box; unticking just settles. initial={false} so
-                suggestions that load already ticked don't all pop at once. */}
-            <motion.div
-              initial={false}
-              animate={entry.done ? tick : rest}
-              style={{ display: 'flex', flexShrink: 0 }}
-            >
-              {/* A real toggle button, so screen readers get the pressed state. */}
-              <IconButton
-                aria-label={entry.done ? 'Mark as not done' : 'Mark as done'}
-                aria-pressed={entry.done}
-                title={entry.done ? 'Mark as not done' : 'Mark as done'}
-                size="2xs"
-                variant="outline"
-                borderRadius="sm"
-                borderColor={entry.done ? 'app.success' : 'app.borderStrong'}
-                bg={entry.done ? 'app.success' : 'transparent'}
-                color={entry.done ? 'app.accentFg' : 'transparent'}
-                _hover={{
-                  borderColor: 'app.success',
-                  color: entry.done ? 'app.accentFg' : 'app.success'
-                }}
-                onClick={toggleDone}
-              >
-                <LuCheck />
-              </IconButton>
-            </motion.div>
+    <Flex gap="2.5" mt={compact ? '2' : '4'} fontSize={compact ? '13px' : '14px'} lineHeight="1.6">
+      <Text as="span" {...kicker} fontSize={compact ? '10px' : '11px'} pt="2px" flexShrink="0">
+        Note
+      </Text>
+      <Text as="span" color="app.textMuted" data-note>
+        {note}
+      </Text>
+    </Flex>
+  )
+}
 
-            <Text
-              fontSize="sm"
-              fontWeight="medium"
-              color={featured ? 'app.accent' : 'app.textMuted'}
-              textDecoration={entry.done ? 'line-through' : undefined}
-              truncate
-            >
-              {entry.interestTitle}
-            </Text>
-          </Flex>
-
-          <Flex align="center" gap="1" flexShrink="0">
-            <AnimatePresence mode="wait" initial={false}>
-              {confirmingDelete ? (
-                <motion.div
-                  key="confirm"
-                  variants={crossfade}
-                  initial="hidden"
-                  animate="shown"
-                  exit="exit"
-                  style={{ display: 'flex', alignItems: 'center', gap: 4 }}
-                >
-                  <Text fontSize="xs" color="app.textMuted">
-                    Delete?
-                  </Text>
-                  <Button
-                    size="2xs"
-                    bg="app.danger"
-                    color="app.accentFg"
-                    _hover={{ bg: 'app.dangerHover' }}
-                    onClick={onDelete}
-                  >
-                    Yes
-                  </Button>
-                  <Button
-                    size="2xs"
-                    variant="ghost"
-                    color="app.textMuted"
-                    _hover={{ bg: 'app.surfaceHover' }}
-                    onClick={() => setConfirmingDelete(false)}
-                  >
-                    No
-                  </Button>
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="actions"
-                  variants={crossfade}
-                  initial="hidden"
-                  animate="shown"
-                  exit="exit"
-                  style={{ display: 'flex', alignItems: 'center', gap: 4 }}
-                >
-                  <Text fontSize="xs" color="app.textFaint">
-                    {formatEntryDate(entry)}
-                  </Text>
-                  {action}
-                  {onSaveNote && !entry.note && noteDraft === null && (
-                    <IconButton
-                      aria-label="Add a note"
-                      title="Add a note — the next suggestion for this interest takes it into account"
-                      size="xs"
-                      variant="ghost"
-                      ml="1"
-                      color="app.textFaint"
-                      _hover={{ bg: 'app.surfaceHover', color: 'app.text' }}
-                      onClick={() => setNoteDraft('')}
-                    >
-                      <LuPencilLine />
-                    </IconButton>
-                  )}
-                  {onExplain && (
-                    <Button
-                      size="2xs"
-                      variant="ghost"
-                      ml="1"
-                      px="1.5"
-                      // Accent once explained, so it reads as "open", not "spend".
-                      color={explained ? 'app.accent' : 'app.textFaint'}
-                      _hover={{ bg: 'app.surfaceHover', color: 'app.accent' }}
-                      aria-label={explained ? 'Open explanation' : 'Explain this suggestion'}
-                      title={explained ? 'Open explanation' : 'Explain this suggestion (uses AI)'}
-                      onClick={onExplain}
-                    >
-                      <LuBookOpen /> Explain
-                    </Button>
-                  )}
-                  {onDelete && (
-                    <IconButton
-                      aria-label={`Delete suggestion from ${formatEntryDate(entry)}`}
-                      title="Delete this suggestion"
-                      size="xs"
-                      variant="ghost"
-                      ml="1"
-                      color="app.textFaint"
-                      _hover={{ bg: 'app.surfaceHover', color: 'app.danger' }}
-                      onClick={() => setConfirmingDelete(true)}
-                    >
-                      <LuTrash2 />
-                    </IconButton>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </Flex>
+function NoteEditor({
+  entry,
+  note,
+  compact = false
+}: {
+  entry: DailyEntry
+  note: NoteState
+  compact?: boolean
+}): React.JSX.Element {
+  const id = useId()
+  return (
+    <motion.div variants={fadeUp} initial="hidden" animate="shown" exit="exit">
+      <Flex
+        direction="column"
+        gap="2"
+        mt={compact ? '3' : '5'}
+        p={compact ? '3' : '4'}
+        bg="app.surfaceSubtle"
+        borderWidth="1px"
+        borderColor="app.border"
+        borderRadius="10px"
+      >
+        <chakra.label htmlFor={id} fontSize="13px" fontWeight="600" color="app.text">
+          How did it go?{' '}
+          <Text as="span" fontWeight="400" color="app.textFaint">
+            Optional. The next suggestion for this interest takes it into account.
+          </Text>
+        </chakra.label>
+        <Flex gap="2">
+          <Input
+            id={id}
+            autoFocus
+            h="38px"
+            value={note.draft ?? ''}
+            maxLength={MAX_REFLECTION_LENGTH}
+            placeholder="What did you do or learn?"
+            onChange={(event) => note.setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') void note.save()
+              if (event.key === 'Escape') note.setDraft(null)
+            }}
+            {...field}
+          />
+          <Button h="38px" px="4" flexShrink="0" loading={note.saving} onClick={() => void note.save()} {...primaryButton}>
+            Save
+          </Button>
+          <Button h="38px" px="4" flexShrink="0" {...secondaryButton} onClick={() => note.setDraft(null)}>
+            {entry.note ? 'Cancel' : 'Skip'}
+          </Button>
         </Flex>
+      </Flex>
+    </motion.div>
+  )
+}
 
-        {/* Strikethrough stays on the topic line only — running it through the whole
-            suggestion made finished entries genuinely hard to read. */}
-        <Text
-          color={entry.done ? 'app.textFaint' : featured ? 'app.text' : 'app.textMuted'}
-          lineHeight="1.7"
-          fontSize={featured ? 'md' : 'sm'}
-        >
-          {entry.suggestion}
+/** "Done", once ticked: the tint of success rather than the accent's call to action. */
+const doneButton = {
+  bg: 'app.successSubtle',
+  color: 'app.success',
+  borderColor: 'app.success',
+  fontWeight: '700',
+  borderRadius: '9px',
+  _hover: { filter: 'brightness(1.1)' }
+} as const
+
+interface CardProps extends Handlers {
+  entry: DailyEntry
+  onReroll: () => void
+}
+
+/** Today's suggestion. */
+export default function SuggestionCard({ entry, onReroll, ...handlers }: CardProps): React.JSX.Element {
+  const note = useNote(entry, handlers)
+  // Cached explanations open instantly and free; the rest spend tokens.
+  const explained = entry.explanation !== null
+
+  return (
+    <Box as="article" {...card} p="6" data-entry-id={entry.id}>
+      <Flex align="center" justify="space-between" gap="3">
+        <Text {...kicker} color="app.accent">
+          Interest
         </Text>
+        <Flex align="center" gap="0.5">
+          <Text fontSize="12px" color="app.textFaint" mr="1.5" whiteSpace="nowrap">
+            Picked {formatEntryDate(entry)}
+          </Text>
+          <IconButton
+            aria-label="Reroll today's suggestion"
+            title="Pick a different interest and suggestion for today"
+            size="xs"
+            {...iconButton}
+            _hover={{ bg: 'app.surfaceHover', color: 'app.accent' }}
+            onClick={onReroll}
+          >
+            <LuShuffle />
+          </IconButton>
+          <IconButton
+            aria-label={entry.note ? 'Edit note' : 'Add a note'}
+            title="Add a note — the next suggestion for this interest takes it into account"
+            size="xs"
+            {...iconButton}
+            onClick={() => note.setDraft(entry.note)}
+          >
+            <LuPencilLine />
+          </IconButton>
+        </Flex>
+      </Flex>
 
-        {entry.note && noteDraft === null && (
-          <Flex mt="2" align="flex-start" gap="1">
-            <Text
-              data-note
-              flex="1"
-              fontSize="sm"
-              fontStyle="italic"
-              color="app.textMuted"
-              lineHeight="1.6"
-              borderLeftWidth="2px"
-              borderColor="app.borderStrong"
-              pl="3"
-            >
-              {entry.note}
+      {/* Strikethrough stays on the title: through the whole suggestion it was hard to read. */}
+      <Heading
+        as="h2"
+        mt="1"
+        mb="3"
+        fontSize="21px"
+        fontWeight="600"
+        lineHeight="1.3"
+        letterSpacing="-0.005em"
+        color="app.text"
+        textWrap="pretty"
+        textDecoration={entry.done ? 'line-through' : undefined}
+      >
+        {entry.interestTitle}
+      </Heading>
+      <Text fontSize="16px" lineHeight="1.7" color="app.text" opacity={entry.done ? 0.6 : 1} textWrap="pretty">
+        <InlineCode text={entry.suggestion ?? ''} />
+      </Text>
+
+      {entry.note && note.draft === null && <NoteLine note={entry.note} />}
+      <AnimatePresence initial={false}>
+        {note.draft !== null && <NoteEditor key="note-editor" entry={entry} note={note} />}
+      </AnimatePresence>
+
+      <Flex wrap="wrap" gap="2" mt="6">
+        {/* initial={false}: a suggestion that loads already done doesn't pop. */}
+        <motion.div initial={false} animate={entry.done ? pop : rest}>
+          <Button
+            h="42px"
+            px="4"
+            gap="2.5"
+            fontSize="14px"
+            aria-pressed={entry.done}
+            onClick={note.toggleDone}
+            {...(entry.done ? doneButton : primaryButton)}
+          >
+            <LuCheck />
+            {entry.done ? 'Done' : 'Mark as done'}
+          </Button>
+        </motion.div>
+        <Button
+          h="42px"
+          px="4"
+          gap="2.5"
+          fontSize="14px"
+          {...secondaryButton}
+          title={explained ? 'Open explanation' : 'Explain this suggestion (uses AI)'}
+          onClick={handlers.onExplain}
+        >
+          <LuBookOpen />
+          {explained ? 'Open explanation' : 'Explain step by step'}
+        </Button>
+      </Flex>
+    </Box>
+  )
+}
+
+interface RowProps extends Handlers {
+  entry: DailyEntry
+  /** The first row has no rule above it. */
+  first: boolean
+  onDelete: () => void
+}
+
+/** An earlier suggestion. Click the text to read it in full. */
+export function HistoryRow({ entry, first, onDelete, ...handlers }: RowProps): React.JSX.Element {
+  const note = useNote(entry, handlers)
+  const [expanded, setExpanded] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const explained = entry.explanation !== null
+  const date = formatEntryDate(entry)
+
+  function toggleExpanded(): void {
+    // A drag that selected some text is not a click to expand.
+    if (window.getSelection()?.isCollapsed === false) return
+    setExpanded((value) => !value)
+  }
+
+  return (
+    <Grid
+      templateColumns="20px minmax(0, 1fr) auto"
+      columnGap="3.5"
+      px="4.5"
+      py="4"
+      borderTopWidth={first ? '0' : '1px'}
+      borderColor="app.border"
+      transition="background-color 120ms ease"
+      _hover={{ bg: 'app.surfaceSubtle' }}
+      data-entry-id={entry.id}
+    >
+      {/* Ticking bumps the box; unticking just settles. */}
+      <motion.div initial={false} animate={entry.done ? tick : rest} style={{ display: 'flex', marginTop: 1 }}>
+        <chakra.button
+          type="button"
+          aria-label={entry.done ? 'Mark as not done' : 'Mark as done'}
+          aria-pressed={entry.done}
+          title={entry.done ? 'Mark as not done' : 'Mark as done'}
+          onClick={note.toggleDone}
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          w="20px"
+          h="20px"
+          fontSize="12px"
+          borderRadius="6px"
+          borderWidth="1.5px"
+          borderColor={entry.done ? 'app.success' : 'app.borderStrong'}
+          bg={entry.done ? 'app.success' : 'transparent'}
+          color={entry.done ? 'app.accentFg' : 'transparent'}
+          cursor="pointer"
+          _hover={{ borderColor: 'app.success', color: entry.done ? 'app.accentFg' : 'app.success' }}
+        >
+          <LuCheck />
+        </chakra.button>
+      </motion.div>
+
+      <Box minW="0">
+        <Box
+          role="button"
+          tabIndex={0}
+          aria-expanded={expanded}
+          cursor="pointer"
+          borderRadius="6px"
+          onClick={toggleExpanded}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return
+            event.preventDefault()
+            setExpanded((value) => !value)
+          }}
+        >
+          <Text
+            fontSize="14px"
+            fontWeight="600"
+            lineHeight="1.45"
+            color={entry.done ? 'app.textMuted' : 'app.text'}
+            truncate
+          >
+            {entry.interestTitle}
+          </Text>
+          <Flex wrap="wrap" columnGap="2.5" rowGap="1" mt="0.5" fontSize="12px" color="app.textFaint">
+            <Text as="span" _firstLetter={{ textTransform: 'uppercase' }}>
+              {date}
             </Text>
-            {onSaveNote && (
-              <IconButton
-                aria-label="Edit note"
-                title="Edit note"
+            {entry.done && (
+              <Text as="span" color="app.success">
+                Done
+              </Text>
+            )}
+            {explained && (
+              <Text as="span" color="app.accent">
+                Explained
+              </Text>
+            )}
+          </Flex>
+          <Text mt="2" fontSize="14px" lineHeight="1.6" color="app.textMuted" lineClamp={expanded ? undefined : 2}>
+            <InlineCode text={entry.suggestion ?? ''} />
+          </Text>
+        </Box>
+
+        {entry.note && note.draft === null && <NoteLine note={entry.note} compact />}
+        <AnimatePresence initial={false}>
+          {note.draft !== null && <NoteEditor key="note-editor" entry={entry} note={note} compact />}
+        </AnimatePresence>
+      </Box>
+
+      <Flex align="flex-start">
+        <AnimatePresence mode="wait" initial={false}>
+          {confirmingDelete ? (
+            <motion.div
+              key="confirm"
+              variants={crossfade}
+              initial="hidden"
+              animate="shown"
+              exit="exit"
+              style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              <Text fontSize="12px" color="app.textMuted" mr="1">
+                Delete?
+              </Text>
+              <Button
                 size="2xs"
-                variant="ghost"
-                color="app.textFaint"
-                _hover={{ bg: 'app.surfaceHover', color: 'app.text' }}
-                onClick={() => setNoteDraft(entry.note)}
+                borderRadius="6px"
+                bg="app.danger"
+                color="app.accentFg"
+                _hover={{ bg: 'app.dangerHover' }}
+                onClick={onDelete}
+              >
+                Yes
+              </Button>
+              <Button size="2xs" {...quietButton} borderRadius="6px" onClick={() => setConfirmingDelete(false)}>
+                No
+              </Button>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="actions"
+              variants={crossfade}
+              initial="hidden"
+              animate="shown"
+              exit="exit"
+              style={{ display: 'flex', alignItems: 'center', gap: 2 }}
+            >
+              <IconButton
+                aria-label={entry.note ? 'Edit note' : 'Add a note'}
+                title="Add a note — the next suggestion for this interest takes it into account"
+                size="xs"
+                {...iconButton}
+                onClick={() => note.setDraft(entry.note)}
               >
                 <LuPencilLine />
               </IconButton>
-            )}
-          </Flex>
-        )}
-      </Box>
-
-      <AnimatePresence initial={false}>
-        {noteDraft !== null && (
-          <motion.div key="note-editor" variants={fadeUp} initial="hidden" animate="shown" exit="exit">
-            <Flex gap="2" mt="3">
-              <Input
-                autoFocus
-                size="sm"
-                value={noteDraft}
-                maxLength={MAX_REFLECTION_LENGTH}
-                placeholder="What did you do or learn? (optional)"
-                aria-label="Note on this suggestion"
-                onChange={(event) => setNoteDraft(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') void saveNote()
-                  if (event.key === 'Escape') setNoteDraft(null)
-                }}
-                bg="app.surfaceSubtle"
-                color="app.text"
-                borderColor="app.border"
-                _placeholder={{ color: 'app.textFaint' }}
-              />
-              <Button
-                size="sm"
-                onClick={() => void saveNote()}
-                loading={savingNote}
-                bg="app.accent"
-                color="app.accentFg"
-                _hover={{ bg: 'app.accentHover' }}
-                px="4"
-                flexShrink="0"
+              <IconButton
+                aria-label={explained ? 'Open explanation' : 'Explain this suggestion'}
+                title={explained ? 'Open explanation' : 'Explain this suggestion (uses AI)'}
+                size="xs"
+                {...iconButton}
+                // Accent once explained, so it reads as "open", not "spend".
+                color={explained ? 'app.accent' : 'app.textFaint'}
+                _hover={{ bg: 'app.surfaceHover', color: 'app.accent' }}
+                onClick={handlers.onExplain}
               >
-                Save
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                color="app.textMuted"
-                _hover={{ bg: 'app.surfaceHover' }}
-                onClick={() => setNoteDraft(null)}
-                flexShrink="0"
+                <LuBookOpen />
+              </IconButton>
+              <IconButton
+                aria-label={`Delete suggestion from ${date}`}
+                title="Delete this suggestion"
+                size="xs"
+                {...iconButton}
+                _hover={{ bg: 'app.surfaceHover', color: 'app.danger' }}
+                onClick={() => setConfirmingDelete(true)}
               >
-                {entry.note ? 'Cancel' : 'Skip'}
-              </Button>
-            </Flex>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </Box>
+                <LuTrash2 />
+              </IconButton>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </Flex>
+    </Grid>
   )
 }

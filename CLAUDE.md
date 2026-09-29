@@ -70,7 +70,10 @@ file-by-file layout.
   To restyle, edit theme.css; don't hardcode colours in components. The window's
   caption buttons read their colours from these variables too. Watch for Chakra
   styles that use its own palette (e.g. a Button's `_expanded`, the stock
-  Switch): they ignore `data-theme` and stay light in dark mode.
+  Switch): they ignore `data-theme` and stay light in dark mode. The look is
+  Claude Design's "Career App – Modernist v2" (Archivo, bundled locally): every
+  tab renders inside `components/Page.tsx`, and the card and button presets are
+  in `theme/styles.ts`.
 
 ## AI provider — decided
 

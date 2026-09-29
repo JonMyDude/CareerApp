@@ -6,9 +6,9 @@
  * useColorMode always stamps an explicit data-theme on <html>, so there is
  * exactly one light block and one dark block to keep in sync.
  *
- * The window's caption buttons (minimise / maximise / close) are coloured
- * from --app-surface, --app-text-muted and --app-bg too: useColorMode reads
- * them here and hands them to the main process.
+ * The window's caption buttons (minimise / maximise / close) sit on the page
+ * background, so they are coloured from --app-bg and --app-text-muted:
+ * useColorMode reads them here and hands them to the main process.
  */
 
 :root,
@@ -32,6 +32,8 @@
   --app-accent: #2f6feb;
   --app-accent-hover: #2559c4;
   --app-accent-subtle: #e8f0fe;
+  /* Between the accent and the border: a day with one thing done. */
+  --app-accent-muted: #759de9;
   --app-accent-fg: #ffffff;
 
   /* Feedback */
@@ -39,6 +41,11 @@
   --app-danger-hover: #b02f2f;
   --app-danger-subtle: #fdeceb;
   --app-success: #2e8b57;
+  --app-success-subtle: #eaf3ee;
+
+  /* The streak's flame: warm, so it reads as fire next to the blue accent. */
+  --app-streak: #e8590c;
+  --app-streak-subtle: #fdeee7;
 
 
   /* Side rail */
@@ -46,11 +53,12 @@
   --app-rail-hover-bg: #dfe2e8;
   --app-rail-icon: #7b8593;
   --app-rail-active-bg: #ffffff;
-  --app-rail-active-fg: var(--app-text);
+
+  /* Controls */
+  --app-switch-knob: #ffffff;
 
   /* Effects */
   --app-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
-  --app-focus-ring: rgba(47, 111, 235, 0.4);
 }
 
 :root[data-theme='dark'] {
@@ -73,6 +81,7 @@
   --app-accent: #4d8bff;
   --app-accent-hover: #6b9dff;
   --app-accent-subtle: #1c2740;
+  --app-accent-muted: #4168b1;
   --app-accent-fg: #0e1116;
 
   /* Feedback */
@@ -80,18 +89,23 @@
   --app-danger-hover: #ff7c72;
   --app-danger-subtle: #2f1c1b;
   --app-success: #4cb782;
+  --app-success-subtle: #202d2d;
+
+  --app-streak: #ff8a3d;
+  --app-streak-subtle: #362b27;
 
 
   /* Side rail */
   --app-rail-bg: #0e1014;
   --app-rail-hover-bg: #1d212a;
   --app-rail-icon: #69727f;
-  --app-rail-active-bg: #272c35;
-  --app-rail-active-fg: #ffffff;
+  --app-rail-active-bg: #1d212a;
+
+  /* Controls */
+  --app-switch-knob: #e8eaed;
 
   /* Effects */
   --app-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.35);
-  --app-focus-ring: rgba(77, 139, 255, 0.45);
 }
 
 html,
@@ -108,21 +122,10 @@ body {
   transition: background-color 120ms ease, color 120ms ease;
 }
 
-/*
- * A native <select> popup is drawn by Chromium, not by our CSS, and it does not
- * inherit the field's background. Without this the options render as our light
- * text on the popup's white ground — unreadable in dark mode. Setting the
- * option colours explicitly (and color-scheme, which drives the scrollbar and
- * highlight) makes the list match the theme.
- */
-select {
-  color-scheme: inherit;
-}
-
-select option,
-select optgroup {
-  background-color: var(--app-surface);
-  color: var(--app-text);
+/* Thin scrollbars in the theme's colours, not Windows' grey ones with arrows. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--app-border-strong) transparent;
 }
 
 /* The window chrome is not ours to style, but text selection is. */

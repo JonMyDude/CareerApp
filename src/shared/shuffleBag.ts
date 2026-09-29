@@ -12,6 +12,27 @@ export interface ShuffleBag {
 
 export const emptyBag = (): ShuffleBag => ({ drawn: [] })
 
+/**
+ * How far the current cycle has got, as draws made out of draws per cycle.
+ * Draws of deleted items don't count, nor do draws past an item's share (its
+ * weight may have dropped since). `drawn === total` is exactly when the next
+ * draw starts a new cycle.
+ */
+export function cycleProgress<T extends { id: string }>(
+  items: T[],
+  bag: ShuffleBag,
+  weight: (item: T) => number = () => 1
+): { drawn: number; total: number } {
+  let drawn = 0
+  let total = 0
+  for (const item of items) {
+    const share = Math.max(1, weight(item))
+    total += share
+    drawn += Math.min(share, bag.drawn.filter((id) => id === item.id).length)
+  }
+  return { drawn, total }
+}
+
 export interface DrawResult<T> {
   pick: T | null
   bag: ShuffleBag

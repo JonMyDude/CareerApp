@@ -14,15 +14,15 @@ import { createQueue, readJson, writeJsonAtomic } from './jsonFile'
  * flashing the light theme before the page paints.
  */
 
-/** Height of the caption-button strip, in px. It sits in the in-app header's top-right corner. */
-export const TITLE_BAR_HEIGHT = 40
+/** Height of the caption-button strip, in px. Matches the drag strip above the page in App.tsx. */
+export const TITLE_BAR_HEIGHT = 34
 
 /**
  * First run only, before the renderer has ever reported its colours. Mirrors
- * the light --app-surface, --app-text-muted and --app-bg in theme.css; the
- * renderer's values replace these on the first paint.
+ * the light --app-bg and --app-text-muted in theme.css; the renderer's values
+ * replace these on the first paint.
  */
-const FIRST_RUN: FrameColors = { background: '#ffffff', symbols: '#656e7a', appBg: '#f5f6f8' }
+const FIRST_RUN: FrameColors = { background: '#f5f6f8', symbols: '#656e7a', appBg: '#f5f6f8' }
 
 const HEX = /^#[0-9a-f]{6}$/i
 const queue = createQueue()

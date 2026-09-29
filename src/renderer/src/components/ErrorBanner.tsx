@@ -1,4 +1,4 @@
-import { Box, Flex, IconButton, Text } from '@chakra-ui/react'
+import { Flex, IconButton, Text } from '@chakra-ui/react'
 import { LuX } from 'react-icons/lu'
 
 interface Props {
@@ -16,21 +16,20 @@ export default function ErrorBanner({ message, onDismiss }: Props): React.JSX.El
       bg="app.dangerSubtle"
       borderWidth="1px"
       borderColor="app.danger"
-      borderRadius="md"
+      borderRadius="12px"
       px="4"
       py="3"
     >
-      <Box>
-        <Text fontSize="sm" color="app.danger" fontWeight="medium">
-          {message}
-        </Text>
-      </Box>
+      <Text fontSize="14px" color="app.danger" fontWeight="600">
+        {message}
+      </Text>
       {onDismiss && (
         <IconButton
           aria-label="Dismiss"
           size="xs"
           variant="ghost"
           color="app.danger"
+          borderRadius="8px"
           _hover={{ bg: 'app.surfaceHover' }}
           onClick={onDismiss}
         >

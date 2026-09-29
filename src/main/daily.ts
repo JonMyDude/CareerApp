@@ -187,7 +187,7 @@ function toView(data: DailyFile, state: DailyView['state']): DailyView {
   // Everything else that produced a suggestion — including earlier attempts
   // from today that were rerolled away.
   const history = sorted.filter((entry) => entry.id !== today?.id && entry.suggestion)
-  return { state, today, history }
+  return { state, today, history, drawn: data.bag.drawn }
 }
 
 /** The view to hand back after a plain edit (tick, delete, explanation). */

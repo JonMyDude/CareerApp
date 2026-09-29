@@ -79,6 +79,8 @@ export interface DailyView {
   today: DailyEntry | null
   /** Every earlier day that produced a suggestion, newest first. */
   history: DailyEntry[]
+  /** Interest ids drawn so far this shuffle-bag cycle, repeats included. For the Interests tab's cycle meter. */
+  drawn: string[]
 }
 
 export interface SettingsInfo {
@@ -185,7 +187,7 @@ export interface ExportResult {
 
 /** Caption-button colours, read from theme.css by the renderer. Each is #rrggbb. */
 export interface FrameColors {
-  /** Behind the minimise / maximise / close buttons — the header's surface. */
+  /** Behind the minimise / maximise / close buttons — the page background. */
   background: string
   /** The button glyphs. */
   symbols: string

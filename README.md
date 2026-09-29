@@ -28,6 +28,7 @@ Other scripts:
 - `npm run build` — bundle main, preload and renderer into `out/`
 - `npm start` — run the built bundle without packaging
 - `npm run typecheck` — `tsc --noEmit`
+- `npm test` — the checks in `src/**/*.test.ts`, on Node's built-in test runner
 - `npm run build:win` — produce the NSIS installer and a portable `.exe` in `dist/`
 
 ## How the pieces fit
@@ -55,9 +56,10 @@ src/
     ipc.ts           one named handler per operation
   preload/           contextBridge. The only surface the UI can reach.
   renderer/src/      React. Has no filesystem or network access at all.
-    theme/           theme.css (all colours), system.ts (Chakra -> CSS vars), motion.ts
+    theme/           theme.css (all colours), system.ts (Chakra -> CSS vars),
+                     styles.ts (card and button presets), motion.ts
     store/           Zustand stores, the only callers of window.api
-    components/      cards, rail, meter, forms
+    components/      the Page frame, cards, rail, meter, forms
     lib/             hotkeys, history filter, quiz stats helpers
     tabs/            one file per tab, listed once in tabs/config.tsx
 ```
@@ -79,12 +81,14 @@ Anything the renderer sends is validated in main before it touches disk or the
 OS: model names (they go into the request URL), budgets, reminder times,
 window colours, quiz answers.
 
-### Native select popups
+### Dropdowns
 
-A `<select>` dropdown list is drawn by Chromium, not by our CSS, and it does not
-inherit the field's background. Left alone it rendered our light text on the
-popup's white ground — unreadable in dark mode. `theme.css` sets
-`select option` colours explicitly, plus `color-scheme: inherit` on the select.
+There are no native `<select>`s: their open list is a Windows-drawn popup that
+CSS barely reaches (square, system-blue highlight). `components/Dropdown.tsx`
+wraps Chakra's Select instead — same keyboard use, drawn in app tokens. Every
+part sets its own colours, since Chakra's recipe ones ignore `data-theme`, and a
+real `''` option (e.g. "All interests") travels under a sentinel key, because
+the select reads `''` as nothing picked.
 
 ### Colours and dark mode
 
@@ -96,17 +100,36 @@ so components say `bg="app.surface"` and the value is resolved by CSS.
 To restyle the app, edit `theme.css` only. To add a colour, add the variable to
 both blocks and register it once in `system.ts`.
 
-`useColorMode` (a small zustand store in `theme/useColorMode.ts`, shared by the
-rail toggle and Settings) resolves the `system` preference to a concrete value
-and stamps `data-theme` on `<html>`, so the stylesheet only ever needs those two
-blocks. The choice persists in `localStorage`.
+`useColorMode` (a small zustand store in `theme/useColorMode.ts`, changed from
+Settings) resolves the `system` preference to a concrete value and stamps
+`data-theme` on `<html>`, so the stylesheet only ever needs those two blocks. The
+choice persists in `localStorage`.
 
 **Chakra's own palette ignores `data-theme`.** Built-in styles that pull from
 Chakra's colour palette rather than our tokens — a ghost Button's `_expanded`
-state, the stock `Switch` — stay light in dark mode. The Progress "Details"
-button came out white until it got an explicit `_expanded`, and Settings uses its
-own token-only `ToggleSwitch`. Set colours from `app.*` tokens wherever Chakra
-would otherwise choose.
+state, the stock `Switch` — stay light in dark mode. So the collapsible toggles
+are plain `chakra.button`s, the switches are the token-only `ToggleSwitch` /
+`SwitchTrack`, and every Chakra focus ring reads `gray.focusRing`, which
+`system.ts` points at `--app-accent`. Set colours from `app.*` tokens wherever
+Chakra would otherwise choose.
+
+### The look
+
+The design is "Career App – Modernist v2" from Claude Design: Archivo, a
+labelled rail, no header bar, and every tab as a page with its main content
+first and the extra information in a side column (`components/Page.tsx`). In a
+narrow window the side column drops under the main one, and below 1024px the
+rail folds to its icons.
+
+- **Archivo is bundled** through `@fontsource-variable/archivo`, imported in
+  `main.tsx`. The CSP allows no remote fonts, and the app makes no network calls
+  but Gemini's.
+- `theme/styles.ts` holds the recurring pieces as style-prop objects — `card`,
+  `kicker`, the four button looks and `field` — spread onto Chakra elements.
+  They only name `app.*` tokens, so colour still lives in `theme.css` alone.
+- The design is dark-only; light mode applies the same layout to the light
+  palette. The streak's flame has its own warm `--app-streak`, so it reads as
+  fire next to the blue accent.
 
 ### Data
 
@@ -144,6 +167,9 @@ change can migrate instead of guessing.
 8. **Done** — daily reminder, tray, Start with Windows.
 9. **Done** — importance meter and filter on Interests, weighting the Daily picks;
    automatic retry of Gemini 5xx errors.
+10. **Done** — the Modernist v2 restyle (see [The look](#the-look)): Interests
+    grouped by importance with the shuffle-bag cycle beside them, a streak card,
+    tickable explanation steps, a segmented quiz progress bar.
 
 ## Daily Suggestion, how it works
 
@@ -152,10 +178,17 @@ change can migrate instead of guessing.
 - `bag` — which interests have been drawn in the current cycle
 - `entries` — every day's pick and suggestion, newest first, kept forever
 
-The UI reads this as a feed: today's suggestion sits in a card at the top, a 1px
-rule separates it, and every earlier day scrolls beneath it in a flatter style.
-While today is generating, the spinner occupies only the top slot — the history
-below stays on screen.
+The UI reads this as a feed: today's suggestion sits in a card at the top, and
+every earlier one is a row in the "Earlier suggestions" list beneath it, its text
+clamped to two lines until clicked. Progress, the streak, the reminder switch and
+the export sit in the side column. While today is generating, the spinner
+occupies only the top slot — the history below stays on screen.
+
+The Interests tab groups interests by importance and shows, beside them, how far
+the current cycle has got ("6 of 11 picks"). `DailyView.drawn` carries the bag's
+ids for that; `cycleProgress()` in `shuffleBag.ts` counts them, with
+`shuffleBag.test.ts` checking it against `drawFromBag`. Each row's "Last picked
+26. sep. · 3 of 5 done" comes from the history the Daily tab already holds.
 
 ### File format v1 -> v6
 
@@ -226,9 +259,10 @@ dead one out.
 
 ### Ticking suggestions off, and deleting them
 
-Every card carries a checkmark toggle, today's included, persisted as `done` on
-the entry. Old entries also get a delete button (with an inline confirm); today's
-has the reroll instead, since rerolling is the way to replace it.
+Today's card has **Mark as done** and every history row a checkbox, both
+persisted as `done` on the entry. History rows also get a delete button (with an
+inline confirm); today's has the reroll instead, since rerolling is the way to
+replace it.
 
 `done` is the point of the whole feature: it is what tells the model which
 suggestions you actually followed through on.
@@ -274,11 +308,12 @@ any notes.
 
 ### Reflection notes
 
-Ticking a card opens a one-line field under it: "What did you do or learn?
-(optional)". Enter saves, Esc or Skip closes. Skipping writes nothing. A saved
-note shows under the suggestion as a quoted line with a pencil to edit; cards
-without one get an "Add a note" pencil, since a note on a skipped suggestion
-("too hard") is just as useful to the model. Unticking keeps the note.
+Ticking a suggestion off opens a one-line field under it: "How did it go?".
+Enter saves, Esc or Skip closes. Skipping writes nothing. A saved note shows
+under the suggestion after a NOTE label. The pencil (top right of today's card,
+and among each history row's actions) adds or edits one, since a note on a
+skipped suggestion ("too hard") is just as useful to the model. Unticking keeps
+the note.
 
 Main collapses whitespace and caps notes at 280 characters
 (`MAX_REFLECTION_LENGTH`) — they go into the prompt. The editor sits outside the
@@ -287,10 +322,13 @@ input.
 
 ### Progress & streaks
 
-A strip at the top of the Daily tab: the current streak, "12 of 20 done", and
-one bar per day for the last 30 days (brighter the more was finished, today
-outlined). **Details** opens per-interest bars, the longest streak and the
+A Progress card in the Daily side column: "12/20 done", the share finished, the
+best streak, and a square per day for the last 30 days (brighter the more was
+finished, today ringed). **By interest** opens per-interest bars and the
 most-skipped interest; whether it's open is remembered.
+
+Under it, the streak card: a flame that burns once today counts, glows dimmer
+while the streak still needs today, and is out with no streak.
 
 `src/shared/progress.ts` computes it from the entries already on screen — no IPC,
 no tokens. Two choices:
@@ -308,12 +346,14 @@ Above the history: a search box, an interest select, and All / Done / Open.
 Search covers the suggestion, the topic and the note, ignoring case and
 accents (`fold()` in `lib/historyFilter.ts`), so "sumniki" finds "Šumniki". Today's
 card is never filtered. The filter waits for a 150 ms pause in typing, then the
-list crossfades as a whole rather than playing a burst of row exits. Hidden while
-the history has fewer than two entries.
+list crossfades as a whole rather than playing a burst of row exits, and the
+section heading counts what's shown ("3 of 7"). Hidden while the history has
+fewer than two entries.
 
 ### Export to Markdown
 
-Settings → Data → **Export to Markdown…** opens a native save dialog and writes
+**Export to Markdown** in the Daily side column, or Settings → Data, opens a
+native save dialog and writes
 the whole history: newest first, grouped by day, each with done state,
 suggestion, note (as a quote) and explanation. `src/main/exportHistory.ts`.
 
@@ -333,10 +373,11 @@ route that returns the key itself.
 
 ## Explanation tab
 
-Every daily suggestion, today's and each older one, has an **Explain** button.
-Pressing it switches to the Explanation tab, which shows a numbered
-step-by-step walkthrough of the task and the key concepts you will meet doing
-it. Nothing is generated until you press the button.
+Every daily suggestion, today's and each older one, has an Explain button
+("Explain step by step" on today's card, a book icon on history rows). Pressing
+it switches to the Explanation tab, which shows a numbered step-by-step
+walkthrough of the task, with the suggestion and the key concepts you will meet
+doing it in the side column. Nothing is generated until you press the button.
 
 - **One call per suggestion**, about 600–800 tokens (607–801 measured). The call
   uses JSON output with a `responseSchema`: `steps` is an array of strings, and
@@ -344,7 +385,14 @@ it. Nothing is generated until you press the button.
 - **Cached on the entry** as `explanation`, so opening it again is instant and
   free. When a card's explanation is already cached, its button is drawn in
   the accent colour; when pressing it would spend tokens, the tooltip ends in
-  "(uses AI)". **Regenerate**, at the bottom of the tab, writes a new one.
+  "(uses AI)". **Regenerate**, under Key concepts, writes a new one.
+- **Steps tick off.** Click a step to mark it done; a count and a bar sit above
+  the list. Ticks live in localStorage, keyed by the suggestion and the
+  explanation's `generatedAt`, so a regenerated explanation starts clean. They
+  are a reading aid, so they stay out of `daily.json` and the export.
+- **Finish** under the steps ticks the suggestion itself off, as on the Daily
+  tab, so progress and the streak follow. It stays disabled until every
+  step is ticked, and shows "Done" once the suggestion is.
 - **One at a time.** The tab holds only which entry is open
   (`store/useExplainStore.ts`). The explanation itself lives on the entry in the
   Daily store, so there is one copy. Deleting the suggestion on the Daily tab
@@ -457,21 +505,16 @@ A failed prefetch is swallowed; the next round is simply fetched on demand.
 
 ### Progress bar
 
-`components/QuizProgress.tsx` — a Duolingo-style bar built with Motion for React
-(`motion`, formerly Framer Motion). Rounded track, spring-driven blue fill in
-`--app-accent`, and a translucent highlight along the top of the fill. It
-advances the moment an answer is given, not on "Naprej", so the click has
-immediate feedback.
+`components/QuizProgress.tsx` — one segment per question: green or red once
+answered, the accent for the question on screen, grey for those ahead. It
+changes the moment an answer is given, not on "Naprej", so the click has
+immediate feedback. The score screen shows the same row, with nothing current.
 
-The fill is driven through `useMotionValue` + `useSpring`, with the target set
-from an effect. The first version used the `animate` prop and tracked the
-previous value in a ref read **during render**; React's double-invoked render
-left the fill stuck a step behind the real progress — `aria-valuenow` said 4
-while the width still read 40%. Do not mutate refs during render here.
-
-A new round resets progress to zero. Sliding backwards reads as a bug, so a
-decrease calls `spring.jump()` and snaps; only growth animates.
-`useReducedMotion()` snaps too.
+Beside the question, **Ta krog** counts right and wrong so far and gives the
+subject's accuracy over every round, read again from `quiz-history.json` after
+each answer (a local read, no AI). In a new round a **Ponovi napake** card
+appears there too when the selection has open mistakes; it ends the round and
+starts the review.
 
 ### Ending a round early
 
@@ -535,8 +578,8 @@ counted.
 
 ### Statistika
 
-A collapsible panel under the setup: answers and share correct overall, a bar
-per subject, and per subject its classes, its three weakest topics (at least 3
+A card beside the setup: answers and share correct overall and a bar per
+subject; click a subject for its classes, its three weakest topics (at least 3
 answers each) and its open mistakes. Slovenian plurals are handled —
 "3 odgovori", "5 odgovorov", "1 odprta", "2 odprti" — by the last two digits.
 
@@ -551,24 +594,23 @@ it too would skip a question.
 ## Window frame
 
 The native title bar is hidden (`titleBarStyle: 'hidden'`), which drops its icon
-and "Career App" text. Electron draws the three caption buttons over the
-top-right of the in-app header, which is the drag handle
-(`-webkit-app-region: drag`, 160px right padding so text stays clear of the
-buttons). Hit-testing confirms it: the header answers `HTCAPTION` (drag,
-double-click to maximise, snap), the buttons `HTMINBUTTON`/`HTMAXBUTTON`/`HTCLOSE`.
+and "Career App" text. Electron draws the three caption buttons over the right
+end of an empty 34px strip above the page (`TITLE_BAR_HEIGHT` in
+`windowTheme.ts`). That strip and the rail's empty space are the drag handles
+(`-webkit-app-region: drag`): drag, double-click to maximise, snap.
 
 The buttons follow the theme without main owning any colour: `useColorMode`
-reads `--app-surface`, `--app-text-muted` and `--app-bg` from the page and sends
-them (`frame:set-theme`). Main validates `#rrggbb`, recolours the overlay, and
-caches the set in `window-theme.json`, so the next launch opens dark with no light
+reads `--app-bg` and `--app-text-muted` from the page and sends them
+(`frame:set-theme`). Main validates `#rrggbb`, recolours the overlay, and caches
+the set in `window-theme.json`, so the next launch opens dark with no light
 flash. The only hex in main is the first-run fallback.
 
-Anything clickable added to the header needs `WebkitAppRegion: 'no-drag'`.
+Anything clickable added to the strip or the rail needs `WebkitAppRegion: 'no-drag'`.
 
 ## Settings
 
 The gear at the bottom of the rail (`Ctrl+,`). It isn't in the tab list, but it
-shows the same gliding chip. Each field saves on its own and is validated in
+shows the same selected background. Each field saves on its own and is validated in
 main; the page then shows the settings read back from disk.
 
 - **Appearance**: Light / Dark / System.
@@ -585,7 +627,7 @@ anything else in the file.
 
 | Keys | Does |
 |---|---|
-| `Ctrl+1` … `Ctrl+4` | Interests, Daily, Explanation, Question Generator |
+| `Ctrl+1` … `Ctrl+4` | Interests, Daily, Explanation, Quiz (the rail shows each) |
 | `Ctrl+,` | Settings |
 | `1–4` / `A–D`, `Enter` / `→` | answer and continue, in the quiz |
 
@@ -640,16 +682,16 @@ retune the feel of the whole app in one file.
 
 | Where | What moves |
 |---|---|
-| Rail | The selected chip is one `layoutId` element that glides between icons |
 | Tabs | The incoming panel fades up |
 | Token panel | Scales out of the rail from its bottom-left corner, and back |
 | Quiz screens | Setup, loading, play, score and error crossfade |
 | Quiz questions | Old question leaves left, new one arrives from the right |
 | Quiz answers | The right answer pops, a wrong pick shakes |
 | Quiz reveal | Explanation and Naprej fade up; the score scales in |
-| Daily | Today's card and the spinner crossfade; a tick pops the checkbox |
-| Notes | The note field fades up under a card when it's ticked |
-| Progress | Details open and close by height; the chevron turns |
+| Daily | Today's card and the spinner crossfade; a tick pops the checkbox or the Done button |
+| Notes | The note field fades up under a suggestion when it's ticked |
+| Progress | By interest opens and closes by height; the chevron turns |
+| Streak | The flame pops when today's tick lights it |
 | History filter | A new filter crossfades the whole list |
 | Lists | Rows slide in; a deleted row leaves and the rest close the gap |
 | Confirms | Trash icon and "Delete? Yes/No" crossfade |
@@ -660,12 +702,13 @@ retune the feel of the whole app in one file.
   `<AnimatePresence mode="popLayout">` with `layout` on each row: the leaving
   row is lifted out of the flow and its siblings close the gap by transform,
   never by animating `height`. The list container must be `position: relative`.
-  The one exception is the two collapsible panels (Progress details,
-  Statistika): they animate `height` from 0 to `auto` in a 160 ms tween, because
-  nothing else can reveal them without the content below jumping.
+  The one exception is the collapsible By interest panel: it animates `height`
+  from 0 to `auto` in a 160 ms tween, because nothing else can reveal it
+  without the content below jumping.
 - **No entrance on launch.** `initial={false}` wherever content is already on
   screen at first paint.
-- **Never mutate refs during render** — see the progress-bar note above.
+- **Never mutate refs during render.** An earlier spring-driven quiz bar read a
+  ref during render, and React's double-invoked render left it a step behind.
 - **Motion on a wrapper, not the Chakra element.** Both want a `transition`
   prop; the wrapping `motion.div` avoids the clash. A wrapped element loses
   whatever stretching its old flex parent gave it — a `<button>` then shrinks to
@@ -674,10 +717,9 @@ retune the feel of the whole app in one file.
 
 ### Structural choices worth knowing
 
-- **The progress bar sits outside the sliding question body**, in
-  `QuestionGeneratorTab`. Inside it, the bar would slide away with every
-  question. The counter and topic *do* travel with their question: in a fixed
-  row they would show the next question's labels while the old one is leaving.
+- **The progress segments and the "Vprašanje N od M" heading sit outside the
+  sliding question body**, in `QuestionGeneratorTab`, so they hold still. The
+  topic travels with its question.
 - **Tab panels stay mounted.** The Daily tab generates on mount, so unmounting
   inactive tabs would re-trigger it. Only the entrance animates, since inactive
   panels are `display: none`. Verified: six tab switches, zero AI calls.
@@ -692,8 +734,6 @@ retune the feel of the whole app in one file.
 
 `<MotionConfig reducedMotion="user">` in `main.tsx` drops transform and layout
 animation for users with reduced motion on, and keeps the opacity fades.
-`QuizProgress` also checks `useReducedMotion()` itself, because it animates
-`width`, which `MotionConfig` does not cover.
 
 Motion reads the preference **when each component mounts**. Launch with reduced
 motion on and everything is correct; flip the Windows setting while the app is
@@ -744,7 +784,7 @@ installs, shortcuts and Explorer all show the logo.
 
 ## Token usage meter
 
-The rail shows Gemini tokens spent today, above the theme toggle. Clicking it
+The rail shows Gemini tokens spent today, above Settings. Clicking it
 opens a small panel with the input/output split and a per-feature breakdown.
 
 Numbers come from the `usageMetadata` block Gemini returns on every response —
