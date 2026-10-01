@@ -11,9 +11,10 @@ interface Props {
 }
 
 /**
- * The one place a key is entered. It goes straight to the main process and is
- * written to userData — the renderer never reads it back, and `settings.get()`
- * only ever reports whether one exists.
+ * The one place a key is entered. It goes straight to the cloud (through the
+ * desktop's main process, or directly from the browser) and is stored there —
+ * no client ever reads it back, and `settings.get()` only reports whether one
+ * exists.
  */
 export default function ApiKeyPanel({ variant }: Props): React.JSX.Element {
   const saveApiKey = useDailyStore((state) => state.saveApiKey)
@@ -46,7 +47,7 @@ export default function ApiKeyPanel({ variant }: Props): React.JSX.Element {
         <Text fontWeight="600">{variant === 'setup' ? 'Add your Gemini API key' : 'Replace API key'}</Text>
       </Flex>
       <Text fontSize="13px" color="app.textMuted" mb="3">
-        Stored locally in your app data folder and used only by the background process.
+        Saved in your cloud and used only there. No device ever reads it back.
       </Text>
 
       <Flex gap="2">

@@ -1,13 +1,12 @@
 import type { Explanation, QuestionRequest } from '@shared/types'
-import { readConfig } from './config'
+import { readSettings } from './settings'
 import { recordUsage, type UsageFeature } from './usage'
 
 /**
- * The only network calls the app makes.
+ * Every call to Gemini.
  *
- * Runs in the main process so the API key never enters the renderer bundle,
- * per the hard constraint in CLAUDE.md. Only generated content crosses the
- * IPC bridge.
+ * Runs in the cloud, so the API key never reaches a client, per the hard
+ * constraint in CLAUDE.md. Only generated content is sent back.
  */
 
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models'
@@ -49,7 +48,7 @@ function describeFailure(status: number, message?: string): string {
  * `feature` only tags the token accounting.
  */
 async function callGemini(feature: UsageFeature, body: Record<string, unknown>): Promise<string> {
-  const { geminiApiKey, model } = await readConfig()
+  const { geminiApiKey, model } = await readSettings()
   if (!geminiApiKey) throw new Error('No API key configured.')
 
   let response: Response

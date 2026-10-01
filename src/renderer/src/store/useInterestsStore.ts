@@ -14,6 +14,8 @@ interface InterestsState {
   status: Status
   error: string | null
   load: () => Promise<void>
+  /** Re-read without a spinner, e.g. when the window regains focus. */
+  refresh: () => Promise<void>
   add: (input: InterestInput) => Promise<void>
   edit: (id: string, patch: InterestPatch) => Promise<void>
   remove: (id: string) => Promise<void>
@@ -33,6 +35,15 @@ export const useInterestsStore = create<InterestsState>((set, get) => ({
       set({ interests: await window.api.interests.list(), status: 'ready' })
     } catch (error) {
       set({ status: 'error', error: message(error) })
+    }
+  },
+
+  refresh: async () => {
+    if (get().status !== 'ready') return
+    try {
+      set({ interests: await window.api.interests.list() })
+    } catch {
+      // Offline for a moment: keep what is on screen.
     }
   },
 

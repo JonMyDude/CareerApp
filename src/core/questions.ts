@@ -1,16 +1,13 @@
 import { createHash, randomInt, randomUUID } from 'node:crypto'
-import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
-import { app } from 'electron'
 import { MAX_QUESTIONS, MIN_QUESTIONS } from '@shared/curriculum'
 import type { QuestionRequest, QuizQuestion } from '@shared/types'
 import { generateQuizQuestions, type RawQuizQuestion } from './ai'
+import { docs } from './docs'
 
 /**
  * Question generator: prompt, validate, remember.
  *
- * The spec is written client/server; here the "server" half is the main
- * process. Its `seen_topics` table carries a `user_id` — dropped, because this
+ * The spec is written client/server; here the "server" half is the cloud. Its `seen_topics` table carries a `user_id` — dropped, because this
  * app is single-user and local, so every row would hold the same value.
  *
  * Two things are remembered per subject:
@@ -57,29 +54,17 @@ const issuedHashes = new Set<string>()
 /** Serialises the read-modify-write in markQuestionsSeen. */
 let writeQueue: Promise<unknown> = Promise.resolve()
 
-function filePath(): string {
-  return join(app.getPath('userData'), 'questions.json')
-}
-
 async function read(): Promise<QuestionsFile> {
-  try {
-    const parsed = JSON.parse(await fs.readFile(filePath(), 'utf-8')) as Partial<QuestionsFile>
-    return {
-      version: 1,
-      topics: Array.isArray(parsed.topics) ? parsed.topics : [],
-      hashes: Array.isArray(parsed.hashes) ? parsed.hashes : []
-    }
-  } catch {
-    return { version: 1, topics: [], hashes: [] }
+  const parsed = (await docs().read('questions')) as Partial<QuestionsFile> | null
+  return {
+    version: 1,
+    topics: Array.isArray(parsed?.topics) ? parsed.topics : [],
+    hashes: Array.isArray(parsed?.hashes) ? parsed.hashes : []
   }
 }
 
-async function write(data: QuestionsFile): Promise<void> {
-  const target = filePath()
-  const tmp = `${target}.tmp`
-  await fs.mkdir(app.getPath('userData'), { recursive: true })
-  await fs.writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8')
-  await fs.rename(tmp, target)
+function write(data: QuestionsFile): Promise<void> {
+  return docs().write('questions', data)
 }
 
 /**

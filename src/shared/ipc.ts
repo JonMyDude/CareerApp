@@ -1,10 +1,12 @@
-/** Channel names, in one place so main and preload cannot drift apart. */
+/**
+ * Channel names, in one place so the clients and the cloud cannot drift apart.
+ * Data channels double as the cloud API's routes: POST /api/<channel>.
+ */
 export const IPC = {
   interestsList: 'interests:list',
   interestsCreate: 'interests:create',
   interestsUpdate: 'interests:update',
   interestsRemove: 'interests:remove',
-  systemDataPath: 'system:data-path',
   dailyGet: 'daily:get',
   dailyGenerate: 'daily:generate',
   dailyReroll: 'daily:reroll',
@@ -24,6 +26,15 @@ export const IPC = {
   frameSetTheme: 'frame:set-theme',
   exportHistory: 'export:history',
   exportReveal: 'export:reveal',
+  /** Cloud: the history as Markdown text; each client saves it its own way. */
+  exportMarkdown: 'export:markdown',
+  /** Cloud: whether it holds any data yet, and a one-time upload of a desktop's files. */
+  dataStatus: 'data:status',
+  dataImport: 'data:import',
+  /** Desktop only: where the cloud is and the credentials to reach it. */
+  cloudGet: 'cloud:get',
+  cloudSet: 'cloud:set',
+  cloudUpload: 'cloud:upload',
   reminderTest: 'reminder:test',
   // Main → renderer events. The preload subscribes to these fixed names only.
   eventDailyChanged: 'event:daily-changed',

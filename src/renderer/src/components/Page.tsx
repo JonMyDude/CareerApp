@@ -44,7 +44,9 @@ export default function Page({ eyebrow, title, actions, back, aside, children }:
         {actions}
       </Flex>
 
-      <Flex wrap="wrap" gap="6" align="flex-start">
+      {/* A size container, so the side column can tell whether it sits beside
+          the main one or has dropped below it. */}
+      <Flex wrap="wrap" gap="6" align="flex-start" css={{ containerType: 'inline-size' }}>
         <Box flex="1 1 440px" minW="0">
           {children}
         </Box>
@@ -56,10 +58,14 @@ export default function Page({ eyebrow, title, actions, back, aside, children }:
             flex="1 1 250px"
             // Long truncated titles inside must not widen it.
             minW="0"
-            maxW="300px"
-            // Only where it fits: a side column taller than the window would
-            // pin its own bottom out of reach until the end of the page.
-            css={{ '@media (min-height: 700px)': { position: 'sticky', top: 0 } }}
+            css={{
+              // Beside the main column (440 + 24 gap + 250 fit) it stays narrow;
+              // dropped below it, on a phone, it spans the full width.
+              '@container (min-width: 714px)': { maxWidth: '300px' },
+              // Only where it fits: a side column taller than the window would
+              // pin its own bottom out of reach until the end of the page.
+              '@media (min-height: 700px)': { position: 'sticky', top: 0 }
+            }}
           >
             {aside}
           </Flex>

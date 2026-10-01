@@ -4,20 +4,27 @@ import { LuBellRing, LuCheck, LuFileDown, LuMonitor, LuMoon, LuSun } from 'react
 import { TIME_PATTERN } from '@shared/reminder'
 import type { SettingsInfo, SettingsPatch } from '@shared/types'
 import ApiKeyPanel from '../components/ApiKeyPanel'
+import CloudSection from '../components/CloudSection'
 import Page from '../components/Page'
 import SegmentedControl from '../components/SegmentedControl'
 import ToggleSwitch from '../components/ToggleSwitch'
 import { useHistoryExport } from '../lib/exportHistory'
 import { ipcErrorMessage } from '../store/ipcError'
 import { useSettingsStore } from '../store/useSettingsStore'
+import { useUsageStore } from '../store/useUsageStore'
 import { card, field, primaryButton, quietButton, secondaryButton } from '../theme/styles'
 import { useColorMode, type ColorModePreference } from '../theme/useColorMode'
 
 /**
  * Everything that used to mean editing config.json by hand. Each field saves
- * on its own and is validated in the main process; what's shown afterwards is
- * read back from disk.
+ * on its own and is validated where it is stored; what's shown afterwards is
+ * read back. The Gemini key, model and budget are shared through the cloud;
+ * the reminder, tray and cloud connection belong to this computer.
  */
+
+const desktop = window.api.platform === 'desktop'
+/** The desktop and Android keep their own connection and reminder; the browser has neither. */
+const native = window.api.platform !== 'web'
 
 function Section({
   title,
@@ -255,11 +262,17 @@ function SwitchRow({
   )
 }
 
-const TEST_MESSAGES = {
-  shown: 'Sent. Look in the Windows notification area.',
-  refused: 'Windows refused it. Check that notifications are on for Career App in Windows Settings.',
-  unknown: "Sent, but Windows didn't confirm it. If nothing appeared, check Focus assist."
-} as const
+const TEST_MESSAGES = desktop
+  ? {
+      shown: 'Sent. Look in the Windows notification area.',
+      refused: 'Windows refused it. Check that notifications are on for Career App in Windows Settings.',
+      unknown: "Sent, but Windows didn't confirm it. If nothing appeared, check Focus assist."
+    }
+  : {
+      shown: 'Sent. Pull down the notification shade.',
+      refused: 'Notifications are off for Career App. Allow them in Android settings.',
+      unknown: "Sent, but Android didn't confirm it."
+    }
 
 function ReminderSection({ settings }: { settings: SettingsInfo }): React.JSX.Element {
   const update = useSettingsStore((state) => state.update)
@@ -303,7 +316,11 @@ function ReminderSection({ settings }: { settings: SettingsInfo }): React.JSX.El
     <>
       <SwitchRow
         label="Remind me each day"
-        hint="A Windows notification with today's suggestion. If today's isn't written yet, it's generated then — the same single call opening the app would make."
+        hint={
+          desktop
+            ? "A Windows notification with today's suggestion. If today's isn't written yet, it's generated then — the same single call opening the app would make."
+            : "A notification with today's suggestion once you've opened the app that day; otherwise a nudge to open it. Set two weeks ahead each time you open the app."
+        }
         checked={settings.reminder.enabled}
         onChange={(enabled) => void save({ reminder: { enabled, time: settings.reminder.time } })}
       />
@@ -323,29 +340,34 @@ function ReminderSection({ settings }: { settings: SettingsInfo }): React.JSX.El
           {...inputStyle}
         />
       </Field>
-      <SwitchRow
-        label="Keep running in the tray"
-        hint="Closing the window hides it to the notification area instead of quitting, so the reminder can still fire. Quit from the tray icon's menu."
-        checked={settings.closeToTray}
-        onChange={(closeToTray) => void save({ closeToTray })}
-      />
-      {settings.reminder.enabled && !settings.closeToTray && (
-        <Text fontSize="12px" color="app.textMuted" data-tray-hint>
-          Reminders only fire while the app is open. Turn on the tray to get them after closing the
-          window.
-        </Text>
+      {/* The tray and Start with Windows are the desktop's alone. */}
+      {desktop && (
+        <>
+          <SwitchRow
+            label="Keep running in the tray"
+            hint="Closing the window hides it to the notification area instead of quitting, so the reminder can still fire. Quit from the tray icon's menu."
+            checked={settings.closeToTray}
+            onChange={(closeToTray) => void save({ closeToTray })}
+          />
+          {settings.reminder.enabled && !settings.closeToTray && (
+            <Text fontSize="12px" color="app.textMuted" data-tray-hint>
+              Reminders only fire while the app is open. Turn on the tray to get them after closing the
+              window.
+            </Text>
+          )}
+          <SwitchRow
+            label="Start with Windows"
+            hint={
+              settings.openAtLogin === null
+                ? 'Available in the installed app.'
+                : 'Starts when you sign in. With the tray on, it waits there instead of opening a window.'
+            }
+            checked={settings.openAtLogin === true}
+            disabled={settings.openAtLogin === null}
+            onChange={(openAtLogin) => void save({ openAtLogin })}
+          />
+        </>
       )}
-      <SwitchRow
-        label="Start with Windows"
-        hint={
-          settings.openAtLogin === null
-            ? 'Available in the installed app.'
-            : 'Starts when you sign in. With the tray on, it waits there instead of opening a window.'
-        }
-        checked={settings.openAtLogin === true}
-        disabled={settings.openAtLogin === null}
-        onChange={(openAtLogin) => void save({ openAtLogin })}
-      />
       <Box>
         <Button h="36px" px="3.5" gap="2" {...secondaryButton} loading={testing} onClick={() => void sendTest()}>
           <LuBellRing /> Send a test notification
@@ -377,7 +399,7 @@ function ExportRow(): React.JSX.Element {
     <Field
       label="Export history"
       error={error}
-      hint="Every daily suggestion with its note and explanation, newest first, as a Markdown file you choose where to save."
+      hint={`Every daily suggestion with its note and explanation, newest first, as a Markdown file ${desktop ? 'you choose where to save' : native ? 'you can share or save' : 'your browser downloads'}.`}
     >
       <Flex align="center" gap="3" wrap="wrap">
         <Button h="36px" px="3.5" gap="2" {...secondaryButton} loading={busy} onClick={() => void run()}>
@@ -393,6 +415,7 @@ function ExportRow(): React.JSX.Element {
               color="app.accent"
               _hover={{ textDecoration: 'underline' }}
               onClick={() => void window.api.export.reveal()}
+              display={desktop ? undefined : 'none'}
             >
               Show in folder
             </Button>
@@ -403,8 +426,32 @@ function ExportRow(): React.JSX.Element {
   )
 }
 
+/** Today's token count, for phones: the rail's usage meter has no room in the bottom bar. */
+function PhoneUsage(): React.JSX.Element | null {
+  const usage = useUsageStore((state) => state.usage)
+  if (!usage) return null
+  return (
+    <Text display={{ base: 'block', md: 'none' }} fontSize="13px" color="app.textMuted">
+      Used today: {usage.totalTokens.toLocaleString()} tokens · {usage.requests}{' '}
+      {usage.requests === 1 ? 'call' : 'calls'}
+    </Text>
+  )
+}
+
+/** Stands in for a section's fields until the shared settings have loaded. */
+function Pending({ error }: { error: string | null }): React.JSX.Element {
+  return error ? (
+    <Text fontSize="13px" color="app.danger" role="alert">
+      {error}
+    </Text>
+  ) : (
+    <Spinner color="app.accent" size="sm" />
+  )
+}
+
 export default function SettingsTab(): React.JSX.Element {
   const settings = useSettingsStore((state) => state.settings)
+  const error = useSettingsStore((state) => state.error)
   const load = useSettingsStore((state) => state.load)
 
   useEffect(() => {
@@ -414,16 +461,28 @@ export default function SettingsTab(): React.JSX.Element {
   return (
     <Page eyebrow="Each change saves on its own" title="Settings">
       <Stack gap="4" maxW="720px">
-        <Section title="Appearance" description="System follows Windows' own light or dark setting.">
+        {native && (
+          <Section
+            title="Cloud"
+            description="Your data lives in your Career App cloud, so this device and every other one show the same thing."
+          >
+            <CloudSection />
+          </Section>
+        )}
+
+        <Section
+          title="Appearance"
+          description={`System follows ${desktop ? "Windows'" : "this device's"} own light or dark setting.`}
+        >
           <ThemePicker />
         </Section>
 
         <Section
           title="Gemini"
-          description="Used for daily suggestions, explanations and quiz questions. The only network calls the app makes go to Google's API."
+          description="Used for daily suggestions, explanations and quiz questions. Your cloud makes the calls to Google, so the key never reaches this device."
         >
           {!settings ? (
-            <Spinner color="app.accent" size="sm" />
+            <Pending error={error} />
           ) : (
             <>
               <Box>
@@ -437,34 +496,41 @@ export default function SettingsTab(): React.JSX.Element {
                   {settings.hasApiKey && <LuCheck />}
                   <Text>
                     {settings.hasApiKey
-                      ? 'An API key is saved. It never leaves the background process.'
+                      ? 'An API key is saved. It never leaves the cloud.'
                       : 'No API key yet. Suggestions, explanations and quizzes need one.'}
                   </Text>
                 </Flex>
                 <ApiKeyPanel variant={settings.hasApiKey ? 'replace' : 'setup'} />
               </Box>
               {/* Keyed on the saved value, so a change from elsewhere resets the draft. */}
+              <PhoneUsage />
               <ModelField key={`model:${settings.model}`} settings={settings} />
               <BudgetField key={`budget:${settings.dailyTokenBudget}`} settings={settings} />
             </>
           )}
         </Section>
 
-        <Section title="Daily reminder" description="A nudge at the time you pick, while the app is running.">
-          {settings ? (
-            <ReminderSection
-              // Remount when the saved time changes elsewhere, so the draft follows it.
-              key={`reminder:${settings.reminder.time}`}
-              settings={settings}
-            />
-          ) : (
-            <Spinner color="app.accent" size="sm" />
-          )}
-        </Section>
+        {/* A browser tab can't nudge you at 9:00. */}
+        {native && (
+          <Section
+            title="Daily reminder"
+            description={desktop ? 'A nudge at the time you pick, while the app is running.' : 'A nudge at the time you pick.'}
+          >
+            {settings ? (
+              <ReminderSection
+                // Remount when the saved time changes elsewhere, so the draft follows it.
+                key={`reminder:${settings.reminder.time}`}
+                settings={settings}
+              />
+            ) : (
+              <Pending error={error} />
+            )}
+          </Section>
+        )}
 
         <Section
           title="Data"
-          description="Everything the app keeps is stored on this computer, in its app data folder."
+          description="Everything the app keeps is stored in your Career App cloud, on Cloudflare."
         >
           <ExportRow />
         </Section>

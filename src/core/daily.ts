@@ -1,13 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
-import { app } from 'electron'
 import { todayKey } from '@shared/date'
 import { drawFromBag, emptyBag, type ShuffleBag } from '@shared/shuffleBag'
 import { MAX_REFLECTION_LENGTH, type DailyEntry, type DailyView, type Explanation } from '@shared/types'
 import { generateDailySuggestion, generateExplanation, type PriorSuggestion } from './ai'
-import { readConfig } from './config'
-import { listInterests } from './store'
+import { docs } from './docs'
+import { listInterests } from './interests'
+import { readSettings } from './settings'
 
 /**
  * Every suggestion ever generated, newest first.
@@ -47,10 +45,6 @@ interface LegacyFile {
   bag?: ShuffleBag
   today?: Partial<DailyEntry> | null
   entries?: Partial<DailyEntry>[]
-}
-
-function filePath(): string {
-  return join(app.getPath('userData'), 'daily.json')
 }
 
 /** A cached explanation, if it has the shape we wrote; otherwise treated as absent. */
@@ -117,12 +111,7 @@ function sortNewestFirst(entries: DailyEntry[]): DailyEntry[] {
 }
 
 async function read(): Promise<DailyFile> {
-  let parsed: LegacyFile | null = null
-  try {
-    parsed = JSON.parse(await fs.readFile(filePath(), 'utf-8'))
-  } catch {
-    return { version: 6, bag: emptyBag(), entries: [] }
-  }
+  const parsed = (await docs().read('daily')) as LegacyFile | null
   if (!parsed) return { version: 6, bag: emptyBag(), entries: [] }
 
   const bag = Array.isArray(parsed.bag?.drawn) ? { drawn: parsed.bag.drawn } : emptyBag()
@@ -143,12 +132,8 @@ async function read(): Promise<DailyFile> {
 }
 
 async function write(data: DailyFile): Promise<void> {
-  const target = filePath()
-  const tmp = `${target}.tmp`
   data.entries = sortNewestFirst(data.entries)
-  await fs.mkdir(app.getPath('userData'), { recursive: true })
-  await fs.writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8')
-  await fs.rename(tmp, target)
+  await docs().write('daily', data)
 }
 
 /** Serialises every read-modify-write, so two changes can't interleave and lose one. */
@@ -259,7 +244,7 @@ function commitSuggestion(id: string, suggestion: string): Promise<DailyView> {
 
 /** Read-only: what do we already have? Never makes a network call. */
 export async function getDaily(): Promise<DailyView> {
-  const [data, interests, config] = await Promise.all([read(), listInterests(), readConfig()])
+  const [data, interests, config] = await Promise.all([read(), listInterests(), readSettings()])
 
   if (currentEntry(data)?.suggestion) return toView(data, 'ready')
   if (interests.length === 0) return toView(data, 'no-interests')
@@ -294,7 +279,7 @@ async function generateDailyOnce(): Promise<DailyView> {
   const interests = await listInterests()
   if (interests.length === 0) return toView(snapshot, 'no-interests')
 
-  const { geminiApiKey } = await readConfig()
+  const { geminiApiKey } = await readSettings()
   if (!geminiApiKey) return toView(snapshot, 'no-api-key')
 
   // Draw, or reuse today's pick if one is waiting, and persist it before calling
@@ -334,7 +319,7 @@ export async function rerollDaily(): Promise<DailyView> {
   const interests = await listInterests()
   if (interests.length === 0) return toView(await read(), 'no-interests')
 
-  const { geminiApiKey } = await readConfig()
+  const { geminiApiKey } = await readSettings()
   if (!geminiApiKey) return toView(await read(), 'no-api-key')
 
   const drawn = await mutate<Drawn | null>((data) => {

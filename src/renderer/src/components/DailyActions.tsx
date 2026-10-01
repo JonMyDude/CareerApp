@@ -45,7 +45,8 @@ export default function DailyActions({ total }: { total: number }): React.JSX.El
   const update = useSettingsStore((state) => state.update)
   const [reminderError, setReminderError] = useState<string | null>(null)
   const exporter = useHistoryExport()
-  const reminder = settings?.reminder
+  // The reminder is a notification on the desktop or phone; a browser tab has no way to nudge you.
+  const reminder = window.api.platform !== 'web' ? settings?.reminder : undefined
 
   async function toggleReminder(): Promise<void> {
     if (!reminder) return

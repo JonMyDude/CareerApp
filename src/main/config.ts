@@ -1,55 +1,37 @@
 import { join } from 'node:path'
 import { app } from 'electron'
 import { DEFAULT_REMINDER_TIME, TIME_PATTERN } from '@shared/reminder'
-import type { ReminderSettings, SettingsInfo, SettingsPatch } from '@shared/types'
+import type { CloudConnection, ReminderSettings, SettingsPatch } from '@shared/types'
 import { createQueue, readJson, writeJsonAtomic } from './jsonFile'
 
 /**
- * Local settings, including the AI API key.
+ * This computer's own settings, in userData/config.json: the reminder, the
+ * tray, and where the cloud is with the service token that gets past
+ * Cloudflare Access. Everything shared (the Gemini key, model, budget) lives in
+ * the cloud — see src/core/settings.ts.
  *
- * Lives in userData, NOT in the repo and NOT in the app bundle, so the key is
- * never committed or shipped. It is read only here in the main process; the
- * renderer is told whether a key exists, never what it is.
- *
- * The file is also meant to be hand-editable, so writes change only the keys
- * they own and keep anything else that is in there.
+ * The file is meant to stay hand-editable, so writes change only the keys they
+ * own and keep anything else in there.
  */
 
-export interface AppConfig {
-  geminiApiKey: string
-  model: string
-  /** Optional daily token ceiling, purely for the usage bar. null = no bar fill. */
-  dailyTokenBudget: number | null
+export interface LocalConfig {
   reminder: ReminderSettings
   closeToTray: boolean
+  cloud: CloudConnection
+  /** Set once this computer's old data files were uploaded. */
+  uploadedAt: string | null
 }
-
-/** Fast, no thinking overhead — this is one short suggestion once a day. */
-export const DEFAULT_MODEL = 'gemini-3.5-flash-lite'
-
-/**
- * The model name is interpolated into the request URL in ai.ts, so it is held
- * to the shape real model ids have: no slashes, query strings or spaces.
- */
-const MODEL_PATTERN = /^[a-z0-9][a-z0-9.-]{0,63}$/i
-const MAX_BUDGET = 100_000_000
 
 const queue = createQueue()
 
-function configPath(): string {
-  return join(app.getPath('userData'), 'config.json')
+export function userDataPath(name: string): string {
+  return join(app.getPath('userData'), name)
 }
 
 /** The file as an object; missing, unreadable or not-an-object all read as empty. */
-async function readRaw(): Promise<Record<string, unknown>> {
-  const raw = await readJson(configPath())
-  return raw && typeof raw === 'object' && !Array.isArray(raw)
-    ? (raw as Record<string, unknown>)
-    : {}
-}
-
-function validBudget(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= MAX_BUDGET
+export async function readRaw(): Promise<Record<string, unknown>> {
+  const raw = await readJson(userDataPath('config.json'))
+  return raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {}
 }
 
 function validReminder(value: unknown): value is ReminderSettings {
@@ -61,70 +43,40 @@ function validReminder(value: unknown): value is ReminderSettings {
   )
 }
 
-export async function readConfig(): Promise<AppConfig> {
+const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '')
+
+export async function readConfig(): Promise<LocalConfig> {
   // Missing or unreadable config is normal on first run.
   const raw = await readRaw()
-  const model = typeof raw.model === 'string' ? raw.model.trim() : ''
   return {
-    geminiApiKey: typeof raw.geminiApiKey === 'string' ? raw.geminiApiKey.trim() : '',
-    // A hand-edited name that isn't a plausible model id falls back rather
-    // than being put into the URL.
-    model: MODEL_PATTERN.test(model) ? model : DEFAULT_MODEL,
-    dailyTokenBudget: validBudget(raw.dailyTokenBudget) ? raw.dailyTokenBudget : null,
     reminder: validReminder(raw.reminder)
       ? { enabled: raw.reminder.enabled, time: raw.reminder.time }
       : { enabled: false, time: DEFAULT_REMINDER_TIME },
-    closeToTray: raw.closeToTray === true
+    closeToTray: raw.closeToTray === true,
+    cloud: {
+      url: text(raw.cloudUrl),
+      clientId: text(raw.accessClientId),
+      clientSecret: text(raw.accessClientSecret)
+    },
+    uploadedAt: typeof raw.uploadedAt === 'string' ? raw.uploadedAt : null
   }
 }
 
 /** Change config.json one write at a time, keeping every key `fn` doesn't touch. */
-function updateRaw(fn: (raw: Record<string, unknown>) => void): Promise<void> {
+export function updateRaw(fn: (raw: Record<string, unknown>) => void): Promise<void> {
   return queue(async () => {
     const raw = await readRaw()
     fn(raw)
-    await writeJsonAtomic(configPath(), raw)
-  })
-}
-
-export function writeApiKey(key: string): Promise<void> {
-  const trimmed = typeof key === 'string' ? key.trim() : ''
-  if (!trimmed) return Promise.reject(new Error('The API key cannot be empty.'))
-  return updateRaw((raw) => {
-    raw.geminiApiKey = trimmed
+    await writeJsonAtomic(userDataPath('config.json'), raw)
   })
 }
 
 /**
- * Apply a change from the Settings page. Everything is validated before the
- * file is touched, so a bad value rejects with a readable message and nothing
- * is half-written.
+ * The device part of a change from the Settings page. Validated before the
+ * file is touched, so a bad value rejects with a readable message.
  */
-export async function updateSettings(patch: SettingsPatch): Promise<void> {
+export async function updateLocalSettings(patch: Pick<SettingsPatch, 'reminder' | 'closeToTray'>): Promise<void> {
   const changes: ((raw: Record<string, unknown>) => void)[] = []
-
-  if (patch.model !== undefined) {
-    const model = typeof patch.model === 'string' ? patch.model.trim() : ''
-    if (model && !MODEL_PATTERN.test(model)) {
-      throw new Error('A model name uses letters, digits, dots and dashes, like gemini-3.5-flash-lite.')
-    }
-    // Empty, or the default spelled out, means "use the default".
-    changes.push((raw) => {
-      if (model && model !== DEFAULT_MODEL) raw.model = model
-      else delete raw.model
-    })
-  }
-
-  if (patch.dailyTokenBudget !== undefined) {
-    const budget = patch.dailyTokenBudget
-    if (budget !== null && !validBudget(budget)) {
-      throw new Error('The budget is a whole number of tokens, from 1 to 100,000,000.')
-    }
-    changes.push((raw) => {
-      if (budget === null) delete raw.dailyTokenBudget
-      else raw.dailyTokenBudget = budget
-    })
-  }
 
   if (patch.reminder !== undefined) {
     if (!validReminder(patch.reminder)) throw new Error('Pick a reminder time like 09:00.')
@@ -147,18 +99,27 @@ export async function updateSettings(patch: SettingsPatch): Promise<void> {
 }
 
 /**
- * What the renderer may know. Reports only WHETHER a key exists — never the key.
- * `openAtLogin` lives in Windows, not in this file, so the caller supplies it.
+ * Where the cloud is. The address must be https (plain http only for a local
+ * `wrangler dev`), since the service token travels with every request.
  */
-export async function getSettingsInfo(openAtLogin: boolean | null): Promise<SettingsInfo> {
-  const { geminiApiKey, model, dailyTokenBudget, reminder, closeToTray } = await readConfig()
-  return {
-    hasApiKey: Boolean(geminiApiKey),
-    model,
-    defaultModel: DEFAULT_MODEL,
-    dailyTokenBudget,
-    reminder,
-    closeToTray,
-    openAtLogin
+export async function writeCloudConnection(connection: CloudConnection): Promise<void> {
+  const url = text(connection?.url).replace(/\/+$/, '')
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    throw new Error('Enter the full address, like https://career-app.you.workers.dev.')
   }
+  const local = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1'
+  if (parsed.protocol !== 'https:' && !(local && parsed.protocol === 'http:')) {
+    throw new Error('The address must start with https://.')
+  }
+  const clientId = text(connection?.clientId)
+  const clientSecret = text(connection?.clientSecret)
+  await updateRaw((raw) => {
+    raw.cloudUrl = parsed.origin
+    // An empty field keeps the saved value, so the secret needn't be retyped.
+    if (clientId) raw.accessClientId = clientId
+    if (clientSecret) raw.accessClientSecret = clientSecret
+  })
 }

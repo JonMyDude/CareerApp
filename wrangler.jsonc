@@ -1,0 +1,26 @@
+// Career App's cloud: the web UI and the API, on one Cloudflare Worker.
+// See README → "Web version" for the one-time setup.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "career-app",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  // node:crypto (randomUUID, createHash, randomInt) for the shared core.
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "dist-web",
+    "not_found_handling": "single-page-application",
+    // /api/* always reaches the Worker, never the assets.
+    "run_worker_first": ["/api/*"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "USER_DATA", "class_name": "UserData" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserData"] }],
+  "vars": {
+    // Fill these in after enabling Cloudflare Access (README → Web version).
+    "ACCESS_TEAM_DOMAIN": "nameless-pine-2074.cloudflareaccess.com",
+    "ACCESS_AUD": "c75556a5fdffc30ff7cf3b3cec6d958d6772c414e7f8945e23c2db2521e9dcf0"
+  },
+  "observability": { "enabled": true }
+}

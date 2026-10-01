@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '@shared/ipc'
 import type {
+  CloudConnection,
+  CloudInfo,
   DailyView,
   ExportResult,
   FrameColors,
@@ -15,6 +17,7 @@ import type {
   SettingsInfo,
   SettingsPatch,
   TestReminderResult,
+  UploadResult,
   UsageSummary
 } from '@shared/types'
 
@@ -25,6 +28,8 @@ import type {
  * Note there is no way to READ the API key from this side — by design.
  */
 const api = {
+  /** The browser and Android install their own `window.api` (renderer/src/installApi.ts). */
+  platform: 'desktop' as 'desktop' | 'web' | 'android',
   interests: {
     list: (): Promise<Interest[]> => ipcRenderer.invoke(IPC.interestsList),
     create: (input: InterestInput): Promise<Interest> =>
@@ -83,8 +88,12 @@ const api = {
     update: (patch: SettingsPatch): Promise<SettingsInfo> =>
       ipcRenderer.invoke(IPC.settingsUpdate, patch)
   },
-  system: {
-    dataPath: (): Promise<string> => ipcRenderer.invoke(IPC.systemDataPath)
+  /** Desktop only: where the cloud is, and the one-time upload of this computer's old files. */
+  cloud: {
+    get: (): Promise<CloudInfo> => ipcRenderer.invoke(IPC.cloudGet),
+    /** Saves the address and service token, then checks they work. */
+    set: (connection: CloudConnection): Promise<CloudInfo> => ipcRenderer.invoke(IPC.cloudSet, connection),
+    upload: (): Promise<UploadResult> => ipcRenderer.invoke(IPC.cloudUpload)
   },
   frame: {
     /** Recolour the window's caption buttons to match the app theme. */
@@ -123,6 +132,7 @@ const api = {
   }
 }
 
-export type AppApi = typeof api
+/** `cloud` exists on the desktop and Android; in the browser the page itself is the cloud. */
+export type AppApi = Omit<typeof api, 'cloud'> & { cloud?: typeof api.cloud }
 
 contextBridge.exposeInMainWorld('api', api)

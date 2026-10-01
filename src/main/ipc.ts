@@ -1,40 +1,21 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import { IPC } from '@shared/ipc'
-import type {
-  InterestInput,
-  InterestPatch,
-  QuestionRequest,
-  QuizQuestion,
-  SettingsPatch
-} from '@shared/types'
-import { getSettingsInfo, updateSettings, writeApiKey } from './config'
-import {
-  explainEntry,
-  generateDaily,
-  getDaily,
-  removeEntry,
-  rerollDaily,
-  setEntryDone,
-  setEntryNote
-} from './daily'
-import { generateQuestions, markQuestionsSeen } from './questions'
-import { getMistakes, getQuizStats, recordAnswer } from './quizHistory'
-import { getUsage } from './usage'
-import {
-  createInterest,
-  dataFilePath,
-  listInterests,
-  removeInterest,
-  updateInterest
-} from './store'
+import type { CloudConnection, SettingsInfo, SettingsPatch } from '@shared/types'
 import { getOpenAtLogin, refreshBackground, setOpenAtLogin } from './background'
-import { exportHistory, revealLastExport } from './exportHistory'
+import { getCloudInfo, setCloudConnection, uploadLocalData } from './cloud'
+import { readConfig, updateLocalSettings } from './config'
+import { exportHistory, revealLastExport } from './exportFile'
+import { remote } from './remote'
 import { testReminder } from './reminder'
 import { applyWindowTheme } from './windowTheme'
 
 /**
  * Every handler is a narrow, named operation — the renderer can never ask the
  * main process to read an arbitrary path or run arbitrary code.
+ *
+ * The data lives in the cloud, so most channels are passed straight on to it
+ * (src/core/ops.ts has the same names). What stays here is what belongs to this
+ * computer: the window, the tray, the reminder, the save dialog.
  *
  * Errors thrown here cross the bridge as a rejected promise; we re-throw a
  * clean message so the UI shows something readable instead of a stack trace.
@@ -54,51 +35,61 @@ function handle<TArgs extends unknown[], TResult>(
   })
 }
 
+/** Channels whose whole job happens in the cloud. */
+const CLOUD_CHANNELS = [
+  IPC.interestsList,
+  IPC.interestsCreate,
+  IPC.interestsUpdate,
+  IPC.interestsRemove,
+  IPC.dailyGet,
+  IPC.dailyGenerate,
+  IPC.dailyReroll,
+  IPC.dailySetDone,
+  IPC.dailyRemove,
+  IPC.dailyExplain,
+  IPC.dailySetNote,
+  IPC.questionsGenerate,
+  IPC.questionsMarkSeen,
+  IPC.questionsRecordAnswer,
+  IPC.questionsStats,
+  IPC.questionsMistakes,
+  IPC.usageGet,
+  // Write-only: the key goes to the cloud and nothing ever reads it back.
+  IPC.settingsSetApiKey
+]
+
+/** The cloud's shared settings with this computer's own on top. */
+async function settingsInfo(): Promise<SettingsInfo> {
+  const [shared, local] = await Promise.all([remote<SettingsInfo>(IPC.settingsGet), readConfig()])
+  return { ...shared, reminder: local.reminder, closeToTray: local.closeToTray, openAtLogin: getOpenAtLogin() }
+}
+
 export function registerIpcHandlers(): void {
-  handle(IPC.interestsList, () => listInterests())
-  handle(IPC.interestsCreate, (input: InterestInput) => createInterest(input))
-  handle(IPC.interestsUpdate, (id: string, patch: InterestPatch) => updateInterest(id, patch))
-  handle(IPC.interestsRemove, (id: string) => removeInterest(id))
-  handle(IPC.systemDataPath, () => dataFilePath())
-
-  handle(IPC.dailyGet, () => getDaily())
-  handle(IPC.dailyGenerate, () => generateDaily())
-  handle(IPC.dailyReroll, () => rerollDaily())
-  handle(IPC.dailySetDone, (id: string, done: boolean) => setEntryDone(id, done))
-  handle(IPC.dailyRemove, (id: string) => removeEntry(id))
-  handle(IPC.dailyExplain, (id: string, force: boolean) => explainEntry(id, force === true))
-  handle(IPC.dailySetNote, (id: string, note: string) => setEntryNote(id, note))
-
-  handle(IPC.questionsGenerate, (request: QuestionRequest) => generateQuestions(request))
-  handle(IPC.questionsMarkSeen, (predmet: string, questions: QuizQuestion[]) =>
-    markQuestionsSeen(predmet, questions)
-  )
-  // Arguments are validated inside quizHistory; malformed ones are refused.
-  handle(IPC.questionsRecordAnswer, (meta: unknown, question: unknown, chosen: unknown) =>
-    recordAnswer(meta, question, chosen)
-  )
-  handle(IPC.questionsStats, () => getQuizStats())
-  handle(IPC.questionsMistakes, (filter: unknown, limit: unknown) => getMistakes(filter, limit))
-
-  handle(IPC.usageGet, () => getUsage())
+  for (const channel of CLOUD_CHANNELS) {
+    handle(channel, (...args: unknown[]) => remote(channel, ...args))
+  }
 
   // Reports only WHETHER a key exists — the key itself never crosses the bridge.
-  handle(IPC.settingsGet, () => getSettingsInfo(getOpenAtLogin()))
-  handle(IPC.settingsSetApiKey, (key: string) => writeApiKey(key))
-  // Hands back the settings as saved, so the page shows what's really on disk.
+  handle(IPC.settingsGet, () => settingsInfo())
+  // Hands back the settings as saved, so the page shows what's really stored.
   handle(IPC.settingsUpdate, async (patch: SettingsPatch) => {
-    const { openAtLogin, ...rest } = patch ?? {}
+    const { openAtLogin, reminder, closeToTray, ...shared } = patch ?? {}
     if (openAtLogin !== undefined && typeof openAtLogin !== 'boolean') {
       throw new Error('Invalid Start with Windows setting.')
     }
-    await updateSettings(rest)
+    if (Object.keys(shared).length > 0) await remote(IPC.settingsUpdate, shared)
+    await updateLocalSettings({ reminder, closeToTray })
     // Start with Windows is a Windows setting, not a line in config.json.
     if (openAtLogin !== undefined) setOpenAtLogin(openAtLogin)
     // The tray appears or goes the moment its setting changes.
     await refreshBackground()
-    return getSettingsInfo(getOpenAtLogin())
+    return settingsInfo()
   })
   handle(IPC.reminderTest, () => testReminder())
+
+  handle(IPC.cloudGet, () => getCloudInfo())
+  handle(IPC.cloudSet, (connection: CloudConnection) => setCloudConnection(connection))
+  handle(IPC.cloudUpload, () => uploadLocalData())
 
   // Needs the sender to find its window, so it skips the generic helper. The
   // colours are validated in applyWindowTheme; a bad set is simply ignored.

@@ -133,3 +133,10 @@ body {
   background: var(--app-accent-subtle);
   color: var(--app-text);
 }
+
+/* The Refresh icon while it works (rail button, pull-to-refresh). */
+@keyframes app-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

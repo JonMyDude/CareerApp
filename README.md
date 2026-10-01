@@ -1,8 +1,9 @@
 # Career App
 
-Local Windows desktop app for tracking learning interests and generating daily
-prompts to explore them. Scope and rules live in [CLAUDE.md](./CLAUDE.md) — read
-that first.
+Windows desktop app, and the same app on the web, for tracking learning
+interests and generating daily prompts to explore them. Both show the same data,
+kept in your own free Cloudflare account — see [Web version](#web-version).
+Scope and rules live in [CLAUDE.md](./CLAUDE.md) — read that first.
 
 ## Stack
 
@@ -14,7 +15,8 @@ that first.
 | Components    | Chakra UI v3                  | |
 | Colours       | CSS variables                 | Light/dark is a pure CSS swap — see below |
 | State         | Zustand                       | One small store per feature |
-| Storage       | JSON files in `userData`      | Flat lists, no database needed |
+| Storage       | JSON documents in a Cloudflare Durable Object | Flat lists, no database needed; one copy for every device |
+| Cloud         | Cloudflare Workers + Access (free plan) | Never sleeps, keeps the Gemini key server-side, email-code login |
 | Animation     | Motion for React              | See the Animations section |
 
 ## Running it
@@ -27,35 +29,48 @@ Other scripts:
 
 - `npm run build` — bundle main, preload and renderer into `out/`
 - `npm start` — run the built bundle without packaging
-- `npm run typecheck` — `tsc --noEmit`
+- `npm run typecheck` — `tsc --noEmit`, for the app and for the Worker
 - `npm test` — the checks in `src/**/*.test.ts`, on Node's built-in test runner
 - `npm run build:win` — produce the NSIS installer and a portable `.exe` in `dist/`
+- `npm run build:web` — the browser build of the UI, into `dist-web/`
+- `npm run dev:web` — build it and run the whole cloud locally (`wrangler dev`, http://127.0.0.1:8787; `.dev.vars` skips the Access check there)
+- `npm run deploy` — build it and publish the Worker to Cloudflare
 
 ## How the pieces fit
 
 ```
 src/
-  shared/            imported by BOTH processes
-    types.ts, ipc.ts   types and IPC channel names
+  shared/            imported everywhere
+    types.ts, ipc.ts   types and channel names (IPC and the cloud API share them)
     progress.ts        streaks and done rates (pure)
     reminder.ts        when the daily reminder fires (pure)
-  main/              Node side. Owns the filesystem and the AI API key.
-    index.ts         window creation, security flags, single-instance lock
-    store.ts         interests.json: read, validate, atomic write
-    daily.ts         daily.json: suggestions, done flags, notes, explanations
-    questions.ts     questions.json + quiz batches: seen topics, validation
-    quizHistory.ts   quiz-history.json: every answer, and mistakes to review
-    usage.ts         usage.json: tokens per day and feature
-    config.ts        config.json: key, model, budget, reminder, tray
+  core/              the data logic, run in the cloud. No Electron, no filesystem.
+    docs.ts          the storage seam: read/write one named JSON document
+    ops.ts           every operation a client may call, by channel name
+    interests.ts     interests: read, validate, write
+    daily.ts         suggestions, done flags, notes, explanations
+    questions.ts     quiz batches: seen topics, validation
+    quizHistory.ts   every answer, and mistakes to review
+    usage.ts         tokens per day and feature
+    settings.ts      the shared settings: Gemini key, model, budget
     ai.ts            every Gemini call — the only file that sends the key
-    exportHistory.ts the history as a Markdown file
+    markdown.ts      the history as Markdown
+  worker/            Cloudflare Worker: serves the web UI, POST /api/<channel>,
+                     checks the Access token, holds the data in a Durable Object
+  main/              the desktop's Node side: everything that is this computer's
+    index.ts         window creation, security flags, single-instance lock
+    remote.ts        calls the cloud, with the Access service token
+    ipc.ts           one named handler per operation; data ones go to the cloud
+    cloud.ts         the cloud address, and the one-time upload of old files
+    config.ts        config.json: reminder, tray, cloud address and token
+    exportFile.ts    saves the Markdown export via a save dialog
     windowTheme.ts   caption-button colours, cached in window-theme.json
     background.ts    tray, hide-on-close, Start with Windows
     reminder.ts      the daily notification
-    jsonFile.ts      atomic write + queue, for the newer files
-    ipc.ts           one named handler per operation
+    jsonFile.ts      atomic write, for the files that stay local
   preload/           contextBridge. The only surface the UI can reach.
-  renderer/src/      React. Has no filesystem or network access at all.
+  renderer/src/      React, for both clients. webApi.ts is the browser's stand-in
+                     for the preload; the desktop renderer makes no network calls.
     theme/           theme.css (all colours), system.ts (Chakra -> CSS vars),
                      styles.ts (card and button presets), motion.ts
     store/           Zustand stores, the only callers of window.api
@@ -68,18 +83,73 @@ src/
 
 `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`. The renderer
 gets exactly the functions listed in `src/preload/index.ts` and nothing else — no
-`require`, no `ipcRenderer`, no arbitrary channel. The API key is loaded by
-`src/main/config.ts`, used only by `src/main/ai.ts`, and never crosses the
-bridge; only the generated text does.
+`require`, no `ipcRenderer`, no arbitrary channel. The Gemini key is stored in
+the cloud by `src/core/settings.ts`, used only by `src/core/ai.ts`, and never
+sent to any client; only the generated text is. The cloud's API is the same
+list of named operations (`src/core/ops.ts`), behind Cloudflare Access.
 
 Main → renderer messages go the same way: the preload subscribes to two fixed
 event channels (`on.dailyChanged`, `on.navigate`) and never hands the raw IPC
 event over. The exposed `window.api` object is frozen, so page code can't swap
 a function out either.
 
-Anything the renderer sends is validated in main before it touches disk or the
-OS: model names (they go into the request URL), budgets, reminder times,
-window colours, quiz answers.
+Anything a client sends is validated where it is stored — the cloud or main —
+before it is written: model names (they go into the request URL), budgets,
+reminder times, window colours, quiz answers, the cloud address (https only).
+
+## Web version
+
+The same React app runs in any browser, and the desktop app reads and writes the
+same data, so both always show the same thing.
+
+```
+ browser ─┐                        Cloudflare Worker (src/worker), behind Cloudflare Access
+          ├─ POST /api/<channel> ─► checks the Access token ─► Durable Object "UserData"
+ desktop ─┘  (service token)       serves dist-web/ (the UI)     └─ src/core: the logic + Gemini
+```
+
+- **Why Cloudflare.** GitHub Pages is static only, so it can't hold data or keep
+  the Gemini key secret. Firebase needs the paid Blaze plan for server code, and
+  Supabase's free projects pause after a week idle. Cloudflare's free plan has
+  100k requests/day, never sleeps, and includes Durable Objects (1 GB) and
+  Access (free for up to 50 users).
+- **One Durable Object holds everything**, each former JSON file as one
+  document. All requests reach that one instance, so the write queues that kept
+  the files consistent still serialise every writer.
+- **Access is the login.** In a browser it asks for your email and sends a
+  one-time code; the desktop uses a service token instead. The Worker also
+  verifies the Access token itself (`src/worker/access.ts`), so a forgotten
+  toggle can't expose the API: without `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD`
+  set it refuses every request.
+- **"Today" follows the client's time zone.** The cloud runs on UTC, so each
+  request sends `x-time-zone` and the day keys are computed in it.
+- **Staying in sync.** Each window re-reads the Daily and Interests data
+  whenever it regains focus, without a spinner.
+- **What stays on the desktop:** the tray, the reminder (it asks the cloud for
+  today's suggestion), Start with Windows, the save dialog, and the window
+  colours. The browser hides those settings.
+
+### One-time setup
+
+1. `npx wrangler login`, then `npm run deploy`. It prints the address,
+   `https://career-app.<your-subdomain>.workers.dev`.
+2. Cloudflare dashboard → Workers → career-app → Settings → Domains & Routes →
+   **Enable Cloudflare Access**. Allow your email address (the one-time PIN login
+   is the default).
+3. Zero Trust → Access → Applications → the new application: copy the
+   **Application Audience (AUD) Tag**. Zero Trust → Settings → your team domain
+   (`<team>.cloudflareaccess.com`). Put both in `wrangler.jsonc` → `vars`
+   and `npm run deploy` again.
+4. Zero Trust → Access → Service credentials → **Create service token**, then
+   add a policy to the application with Action **Service Auth** that includes it.
+5. Desktop app → Settings → Cloud: the address, the token's Client ID and
+   Client Secret → Connect → **Upload to the cloud** (once; it brings your
+   interests, history, quiz data and Gemini key along, and the cloud refuses if
+   it already has data).
+
+After that, open the address in any browser and sign in with the emailed code.
+Optional: in the Worker's Settings → Builds, connect the GitHub repo so every
+push to `main` deploys.
 
 ### Dropdowns
 
@@ -133,22 +203,27 @@ rail folds to its icons.
 
 ### Data
 
-Everything lives in `%APPDATA%/career-app/`, written atomically (temp file +
-rename) and serialised through a queue so two fast edits can't lose one:
+The shared data lives in the cloud's Durable Object, one JSON document each,
+serialised through a queue so two fast edits can't lose one:
+
+| Document | Holds |
+|---|---|
+| `interests` | the interests list, each with an importance (1 Low, 2 Medium, 3 High; missing = Medium) |
+| `daily` | every suggestion, with done, note and explanation, and the shuffle bag |
+| `questions` | quiz topics and question hashes already shown |
+| `quiz-history` | every quiz answer, and the mistakes to review |
+| `usage` | Gemini tokens per day and feature |
+| `settings` | Gemini key, model, budget |
+
+Each document carries a `version` so a shape change can migrate instead of
+guessing. The desktop keeps only its own files in `%APPDATA%/career-app/`:
 
 | File | Holds |
 |---|---|
-| `interests.json` | the interests list, each with an importance (1 Low, 2 Medium, 3 High; missing = Medium) |
-| `daily.json` | every suggestion, with done, note and explanation |
-| `questions.json` | quiz topics and question hashes already shown |
-| `quiz-history.json` | every quiz answer, and the mistakes to review |
-| `usage.json` | Gemini tokens per day and feature |
-| `config.json` | API key, model, budget, reminder, tray — hand-editable |
+| `config.json` | reminder, tray, cloud address and service token — hand-editable |
 | `window-theme.json` | the last caption-button colours |
 
-A corrupt `interests.json` is renamed to `.corrupt-<timestamp>` rather than
-deleted, and the app starts clean. Each file carries a `version` so a shape
-change can migrate instead of guessing.
+The old data files stay there after the one-time upload, untouched, as a backup.
 
 ## Build order status
 
@@ -170,6 +245,9 @@ change can migrate instead of guessing.
 10. **Done** — the Modernist v2 restyle (see [The look](#the-look)): Interests
     grouped by importance with the shuffle-bag cycle beside them, a streak card,
     tickable explanation steps, a segmented quiz progress bar.
+11. **Done** — the [web version](#web-version): the data moved to a Cloudflare
+    Worker + Durable Object, the desktop became a client of it, and the same UI
+    runs in any browser behind Cloudflare Access.
 
 ## Daily Suggestion, how it works
 
@@ -591,6 +669,34 @@ tab stays mounted, so the listener checks. Keys from a text field are ignored,
 and so is Enter on a focused button, which the browser already clicks: handling
 it too would skip a question.
 
+## Android
+
+The same UI as an Android app (Capacitor, `android/`), a third client of the
+cloud. `src/renderer/src/androidApi.ts` is its `window.api`: the browser's data
+calls, sent to the cloud's full address with the Access service token, as the
+desktop does. Native HTTP (`CapacitorHttp`) means no CORS; the connection and
+the reminder live in the app's private Preferences. The Gemini key never
+reaches the phone.
+
+- **Reminder:** local notifications set two weeks ahead each time the app loads
+  today's suggestion — today's with the real text, the rest "your suggestion is
+  waiting". Android doesn't guarantee exact timing; it may be a few minutes late.
+- **Export:** the Markdown file goes to the share sheet (Drive, Files, mail).
+- **Phone layout:** below 768px the rail is a bottom tab bar (this also applies
+  to the website on a phone).
+
+Build and install (phone plugged in, USB debugging on):
+
+```bash
+npm run build:android
+npm run install:android
+```
+
+The APK is signed with `%APPDATA%\career-app-android\release.jks` (password in
+`keystore.properties` beside it) — keep both backed up: an update must be signed
+with the same key, or Android refuses it. Then Settings → Cloud on the phone:
+address + service token, as on the desktop.
+
 ## Window frame
 
 The native title bar is hidden (`titleBarStyle: 'hidden'`), which drops its icon
@@ -811,6 +917,13 @@ Changes are checked in a sandbox, never against real data: the built app is
 launched with `--user-data-dir` pointing at a scratch folder and
 `--remote-debugging-port`, and driven over CDP. Keep that window occluded or
 off-screen, not minimised (see above).
+
+The cloud is checked with `npm run dev:web` (add `--persist-to <scratch dir>`
+to `wrangler dev` for a clean store): the browser at http://127.0.0.1:8787, and
+a scratch desktop profile connected to the same address in Settings → Cloud.
+`npm test` runs `src/core/ops.test.ts` (every operation on in-memory storage
+with a fake Gemini) and `src/worker/access.test.ts` (the Access token check);
+`scripts/test-hooks.mjs` lets Node resolve the app's `@shared/*` imports.
 
 - **No tokens for UI states.** The preload API is frozen, so it can't be stubbed.
   Tests find the zustand stores through a CDP heap query

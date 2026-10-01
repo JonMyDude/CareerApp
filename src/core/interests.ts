@@ -1,7 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
-import { app } from 'electron'
 import {
   DEFAULT_IMPORTANCE,
   MAX_NOTES_LENGTH,
@@ -12,21 +9,15 @@ import {
   type InterestPatch,
   type InterestsFile
 } from '@shared/types'
+import { docs } from './docs'
 
 /**
- * Storage layer: one JSON file in Electron's userData directory.
- * The renderer never touches this — everything goes through IPC.
+ * The interests list: one document. Clients never touch it directly —
+ * everything goes through the named operations in ops.ts.
  */
-
-const FILE_NAME = 'interests.json'
-const EMPTY: InterestsFile = { version: 1, interests: [] }
 
 /** Serialises writes so two quick edits can't interleave and lose one. */
 let writeQueue: Promise<unknown> = Promise.resolve()
-
-export function dataFilePath(): string {
-  return join(app.getPath('userData'), FILE_NAME)
-}
 
 function isInterest(value: unknown): value is Interest {
   if (typeof value !== 'object' || value === null) return false
@@ -34,38 +25,19 @@ function isInterest(value: unknown): value is Interest {
   return typeof v.id === 'string' && typeof v.title === 'string' && typeof v.notes === 'string'
 }
 
-/** Reads the file, tolerating a missing or corrupt one rather than crashing the app. */
+/** Reads the document, tolerating a missing or malformed one rather than failing. */
 async function readFile(): Promise<InterestsFile> {
-  let raw: string
-  try {
-    raw = await fs.readFile(dataFilePath(), 'utf-8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { ...EMPTY }
-    throw error
+  const parsed = (await docs().read('interests')) as Partial<InterestsFile> | null
+  const interests = Array.isArray(parsed?.interests) ? parsed.interests.filter(isInterest) : []
+  // Interests from before importance existed start at Medium; the next write saves it.
+  for (const interest of interests) {
+    if (!isImportance(interest.importance)) interest.importance = DEFAULT_IMPORTANCE
   }
-
-  try {
-    const parsed = JSON.parse(raw) as Partial<InterestsFile>
-    const interests = Array.isArray(parsed?.interests) ? parsed.interests.filter(isInterest) : []
-    // Interests from before importance existed start at Medium; the next write saves it.
-    for (const interest of interests) {
-      if (!isImportance(interest.importance)) interest.importance = DEFAULT_IMPORTANCE
-    }
-    return { version: 1, interests }
-  } catch {
-    // Corrupt file: keep a copy so nothing is silently destroyed, then start clean.
-    await fs.rename(dataFilePath(), `${dataFilePath()}.corrupt-${Date.now()}`).catch(() => {})
-    return { ...EMPTY }
-  }
+  return { version: 1, interests }
 }
 
-/** Write to a temp file and rename, so a crash mid-write can't truncate the real one. */
-async function writeFile(data: InterestsFile): Promise<void> {
-  const target = dataFilePath()
-  const tmp = `${target}.tmp`
-  await fs.mkdir(app.getPath('userData'), { recursive: true })
-  await fs.writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8')
-  await fs.rename(tmp, target)
+function writeFile(data: InterestsFile): Promise<void> {
+  return docs().write('interests', data)
 }
 
 function mutate<T>(fn: (data: InterestsFile) => Promise<T> | T): Promise<T> {

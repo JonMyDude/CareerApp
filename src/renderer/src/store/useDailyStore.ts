@@ -15,8 +15,12 @@ interface DailyState {
   loadedDay: string | null
   /** Reads cached state and generates if today's suggestion isn't there yet. */
   load: () => Promise<void>
-  /** Reloads if the calendar day has changed since the last load. */
-  refreshIfNewDay: () => void
+  /**
+   * On returning to the window: a new day loads (and generates) as at launch;
+   * otherwise the history is re-read quietly, so a change made on another
+   * device shows up without a spinner.
+   */
+  refresh: () => Promise<void>
   retry: () => Promise<void>
   reroll: () => Promise<void>
   setDone: (id: string, done: boolean) => Promise<void>
@@ -58,10 +62,18 @@ export const useDailyStore = create<DailyState>((set, get) => ({
     }
   },
 
-  refreshIfNewDay: () => {
-    const { loadedDay } = get()
+  refresh: async () => {
+    const { loadedDay, status } = get()
+    if (!loadedDay || status === 'loading' || status === 'generating') return
     // A new day means a new suggestion — the same one call a fresh launch makes.
-    if (loadedDay && loadedDay !== todayKey()) void get().load()
+    if (loadedDay !== todayKey()) return get().load()
+    try {
+      const result = await window.api.daily.get()
+      // A generation that started meanwhile has the newer view.
+      if (get().status !== 'generating') set({ result })
+    } catch {
+      // Offline for a moment: keep what is on screen.
+    }
   },
 
   retry: async () => {

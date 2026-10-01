@@ -1,9 +1,7 @@
-import { promises as fs } from 'node:fs'
-import { join } from 'node:path'
-import { app } from 'electron'
 import { todayKey } from '@shared/date'
 import type { UsageSummary } from '@shared/types'
-import { readConfig } from './config'
+import { docs } from './docs'
+import { readSettings } from './settings'
 
 /**
  * Token accounting for the Gemini calls this app makes.
@@ -38,10 +36,6 @@ const DAY_LIMIT = 60
 /** Serialises writes so two calls finishing together can't lose one. */
 let writeQueue: Promise<unknown> = Promise.resolve()
 
-function filePath(): string {
-  return join(app.getPath('userData'), 'usage.json')
-}
-
 const emptyTotals = (): FeatureTotals => ({
   requests: 0,
   prompt: 0,
@@ -51,12 +45,8 @@ const emptyTotals = (): FeatureTotals => ({
 })
 
 async function read(): Promise<UsageFile> {
-  try {
-    const parsed = JSON.parse(await fs.readFile(filePath(), 'utf-8')) as Partial<UsageFile>
-    return { version: 1, days: parsed.days && typeof parsed.days === 'object' ? parsed.days : {} }
-  } catch {
-    return { version: 1, days: {} }
-  }
+  const parsed = (await docs().read('usage')) as Partial<UsageFile> | null
+  return { version: 1, days: parsed?.days && typeof parsed.days === 'object' ? parsed.days : {} }
 }
 
 async function write(data: UsageFile): Promise<void> {
@@ -64,11 +54,7 @@ async function write(data: UsageFile): Promise<void> {
   const keys = Object.keys(data.days).sort()
   for (const stale of keys.slice(0, Math.max(0, keys.length - DAY_LIMIT))) delete data.days[stale]
 
-  const target = filePath()
-  const tmp = `${target}.tmp`
-  await fs.mkdir(app.getPath('userData'), { recursive: true })
-  await fs.writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8')
-  await fs.rename(tmp, target)
+  await docs().write('usage', data)
 }
 
 export interface UsageMetadata {
@@ -115,7 +101,7 @@ export function recordUsage(feature: UsageFeature, meta: UsageMetadata): Promise
 }
 
 export async function getUsage(): Promise<UsageSummary> {
-  const [data, config] = await Promise.all([read(), readConfig()])
+  const [data, config] = await Promise.all([read(), readSettings()])
   const key = todayKey()
   const day = data.days[key] ?? { ...emptyTotals(), features: {} }
 

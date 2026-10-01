@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { SettingsInfo, SettingsPatch } from '@shared/types'
 import { refreshUsage } from './useUsageStore'
+import { ipcErrorMessage } from './ipcError'
 
 /**
  * What the Settings page shows. Always the settings as saved on disk — every
@@ -11,6 +12,8 @@ import { refreshUsage } from './useUsageStore'
  */
 interface SettingsState {
   settings: SettingsInfo | null
+  /** Why the last load failed, e.g. the desktop isn't connected to the cloud yet. */
+  error: string | null
   load: () => Promise<void>
   /** Rejects with main's message when a value is refused; the page shows it by the field. */
   update: (patch: SettingsPatch) => Promise<void>
@@ -19,12 +22,14 @@ interface SettingsState {
 
 export const useSettingsStore = create<SettingsState>((set) => ({
   settings: null,
+  error: null,
 
   load: async () => {
     try {
-      set({ settings: await window.api.settings.get() })
-    } catch {
-      // Leaves the page in its loading state; nothing here is worth an error banner.
+      set({ settings: await window.api.settings.get(), error: null })
+    } catch (failure) {
+      // Shown in place of the fields that need it; the Cloud section still works.
+      set({ error: ipcErrorMessage(failure) })
     }
   },
 

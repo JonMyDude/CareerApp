@@ -3,3 +3,6 @@ out/
 dist/
 *.log
 .DS_Store
+.wrangler/
+dist-web/
+.dev.vars

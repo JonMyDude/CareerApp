@@ -1,4 +1,4 @@
-import { Flex, Input, InputGroup } from '@chakra-ui/react'
+import { Box, Flex, Input, InputGroup } from '@chakra-ui/react'
 import { LuSearch } from 'react-icons/lu'
 import type { HistoryFilterState } from '../lib/historyFilter'
 import { field } from '../theme/styles'
@@ -41,14 +41,16 @@ export default function HistoryFilter({ value, onChange, options }: Props): Reac
       </InputGroup>
 
       {/* One piece, so a narrow window moves both under the search rather than splitting them. */}
-      <Flex gap="2" flexShrink="0">
-        <Dropdown
-          label="Interest"
-          w="180px"
-          value={value.interest}
-          options={[{ value: '', label: 'All interests' }, ...options]}
-          onChange={(interest) => onChange({ ...value, interest })}
-        />
+      <Flex gap="2" flexShrink="0" w={{ base: 'full', md: 'auto' }}>
+        {/* On a phone it takes whatever the status buttons leave. */}
+        <Box flex={{ base: '1', md: 'none' }} w={{ base: 'auto', md: '180px' }} minW="0">
+          <Dropdown
+            label="Interest"
+            value={value.interest}
+            options={[{ value: '', label: 'All interests' }, ...options]}
+            onChange={(interest) => onChange({ ...value, interest })}
+          />
+        </Box>
 
         <SegmentedControl
           label="Show"

@@ -1,11 +1,13 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+// First: in the browser or on Android this installs window.api before any store uses it.
+import './installApi'
 import { ChakraProvider } from '@chakra-ui/react'
 import { MotionConfig } from 'motion/react'
 import App from './App'
 import { system } from './theme/system'
-// Bundled into the app (the CSP allows no remote fonts, and the app makes no
-// network calls but the AI's).
+// Bundled into the app: the CSP allows no remote fonts, and the page fetches
+// nothing but its own cloud API.
 import '@fontsource-variable/archivo'
 import './theme/theme.css'
 

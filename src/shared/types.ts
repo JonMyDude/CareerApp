@@ -174,6 +174,28 @@ export interface QuizStats {
   mistakes: { predmet: string; razred: string; count: number }[]
 }
 
+/* ---------- Cloud (desktop) ---------- */
+
+/** Where the desktop finds the cloud, and the Access service token that lets it in. */
+export interface CloudConnection {
+  url: string
+  clientId: string
+  clientSecret: string
+}
+
+/** What the Settings page may know: never the secret itself. */
+export interface CloudInfo {
+  url: string
+  hasToken: boolean
+  /** This computer still has data files from before the cloud, not yet uploaded. */
+  canUpload: boolean
+}
+
+export interface UploadResult {
+  /** Which documents went up, e.g. ['interests', 'daily']. */
+  imported: string[]
+}
+
 /* ---------- Export ---------- */
 
 export interface ExportResult {

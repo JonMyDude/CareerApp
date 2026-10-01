@@ -5,8 +5,10 @@ project root as `CLAUDE.md` so it's loaded automatically.
 
 ## What this is
 
-A local Windows desktop app, built in React, for tracking learning interests and
-generating daily prompts to explore them. Four tabs plus a Settings page
+A Windows desktop app, the same app on the web, and an Android app
+(Capacitor, `android/`), built in React, for
+tracking learning interests and generating daily prompts to explore them. Both
+read and write one copy of the data in the user's own Cloudflare account. Four tabs plus a Settings page
 (the gear at the bottom of the rail).
 
 ## The tabs
@@ -40,12 +42,15 @@ prompt for the Interests tab, stop, that's not part of this app anymore.
 
 ## Hard constraints
 
-- Runs fully locally. The only network calls the app makes go to the AI API:
-  daily suggestions, explanations and quiz questions. Nothing else (no update
-  checks, sync or web fetching).
-- The AI API key must never touch the renderer/frontend bundle. All AI calls
-  happen in the Electron main process and are exposed to the UI through a safe
-  IPC method, e.g. `generateDailySuggestion(topic)`.
+- Network calls go to two places only: the app's own cloud (the Cloudflare
+  Worker in `src/worker`, decided 2026-09-29 so desktop and web stay in sync)
+  and, from the cloud, the AI API. Nothing else: no update checks, analytics or
+  third-party fetching.
+- The AI API key must never reach a client — not the renderer, not the desktop.
+  All AI calls happen in the cloud (`src/core/ai.ts`) and are exposed as named
+  operations (`src/core/ops.ts`), e.g. `daily:generate`.
+- The cloud is behind Cloudflare Access, and the Worker verifies the Access
+  token itself (`src/worker/access.ts`). Never add an API route that skips it.
 - The provider has since been decided — see "AI provider — decided" below.
 
 ## Stack — decided, don't re-open
@@ -59,10 +64,14 @@ file-by-file layout.
 - **State manager**: Zustand, one small store per feature in
   `src/renderer/src/store/`. `useInterestsStore.ts` is still the only caller of
   `window.api.interests`.
-- **Local storage**: JSON files in `%APPDATA%/career-app/` (interests, daily,
-  questions, quiz-history, usage, config, window-theme), all owned by the main
-  process and written atomically. Deliberately not SQLite — they're flat lists,
-  don't over-engineer it.
+- **Storage**: one JSON document per former file (interests, daily, questions,
+  quiz-history, usage, settings) in a single Cloudflare Durable Object, owned
+  by `src/core` through the `Docs` seam in `core/docs.ts`. Deliberately not a
+  relational schema — they're flat lists, don't over-engineer it. The desktop
+  keeps only its own `config.json` and `window-theme.json` in
+  `%APPDATA%/career-app/`.
+- **Cloud**: Cloudflare Workers free plan — Worker + Durable Object + Access.
+  README.md → Web version has the setup.
 - **Styling**: every colour is a CSS variable in
   `src/renderer/src/theme/theme.css`, in two blocks — `:root` for light and
   `:root[data-theme='dark']` for dark. Chakra's tokens in `theme/system.ts` are
@@ -81,11 +90,11 @@ Google Gemini, picked 2026-09-02.
 
 - Endpoint: `generativelanguage.googleapis.com/v1beta`, `generateContent`.
 - Model: `gemini-3.5-flash-lite` (~1s, no thinking overhead). Override it by
-  adding `"model"` to config.json. Note `gemini-2.5-flash` is closed to new keys.
-- The key lives in `%APPDATA%/career-app/config.json` — outside the repo and
-  outside the packaged bundle. Never hardcode it in source.
-- The key is loaded by `src/main/config.ts` and used only in `src/main/ai.ts`.
-  It must never cross the IPC bridge: `settings:get` returns
+  setting the model in Settings. Note `gemini-2.5-flash` is closed to new keys.
+- The key lives in the cloud's `settings` document (or a `GEMINI_API_KEY` Worker
+  secret) — outside the repo and every bundle. Never hardcode it in source.
+- The key is read by `src/core/settings.ts` and used only in `src/core/ai.ts`.
+  It must never leave the cloud: `settings:get` returns
   `hasApiKey: boolean`, never the key itself. It can be set from the Settings
   page, which is write-only.
 
@@ -105,8 +114,8 @@ starting the next:
 4. Since then, all BUILT: the Explanation tab; a themed title bar; the Settings
    page; keyboard shortcuts; reflection notes, progress & streaks, history
    filter/search and Markdown export on Daily; quiz mistake review and stats;
-   the daily reminder with tray and Start with Windows. README.md has a section
-   for each.
+   the daily reminder with tray and Start with Windows; the web version with
+   cloud sync. README.md has a section for each.
 
 ## Full learning roadmap
 

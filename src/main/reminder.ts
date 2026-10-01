@@ -5,7 +5,10 @@ import { shouldFire } from '@shared/reminder'
 import type { DailyView, TestReminderResult } from '@shared/types'
 import { appIconPath, notifyRenderer, showMainWindow } from './background'
 import { readConfig } from './config'
-import { generateDaily, getDaily } from './daily'
+import { remote } from './remote'
+
+const getDaily = (): Promise<DailyView> => remote<DailyView>(IPC.dailyGet)
+const generateDaily = (): Promise<DailyView> => remote<DailyView>(IPC.dailyGenerate)
 
 /**
  * The daily reminder: a Windows notification at the time set in Settings,
